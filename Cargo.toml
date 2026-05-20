@@ -1,0 +1,61 @@
+[workspace]
+
+members = ["apps/api", "libs/application", "libs/domain", "libs/infrastructure", "libs/shared"]
+
+resolver = "3"
+
+
+[workspace.dependencies]
+
+# 1. Web Framework & Async Runtime
+axum = { version = "0.8.9", features = ["macros"] }
+tokio = { version = "1.52.3", features = ["full"] }
+tower = { version = "0.5.3", features = ["util", "timeout"] }
+tower-http = { version = "0.6.10", features = [
+    "cors",
+    "trace",
+    "compression-full",
+] }
+
+# 2. Database (PostgreSQL không dùng ORM)
+# Hỗ trợ compile-time SQL check, UUIDv7 và JSONB
+sqlx = { version = "0.8.6", features = [
+    "runtime-tokio-native-tls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "json",
+    "macros",
+] }
+
+# 3. Serialization & Validation
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+validator = { version = "0.20.0", features = ["derive"] }
+reqwest = { version = "0.13.3", features = ["json"] }
+
+# 4. Utilities
+uuid = { version = "1.23.1", features = ["v7", "serde"] }
+chrono = { version = "0.4.44", features = ["serde"] }
+dotenvy = "0.15.7"
+anyhow = "1.0.102"
+thiserror = "2.0.18"
+async-trait = "0.1.89"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# 5. In-memory Cache (Thay thế Redis để tiết kiệm RAM cho VPS 4GB)
+moka = { version = "0.12.15", features = ["future"] }
+
+# 6. Security (JWT & Password Hashing)
+jsonwebtoken = "10.4.0"
+argon2 = "0.5.3"
+
+[profile.release]
+# Tối ưu hóa file binary cho Production
+opt-level = 3     # Tối ưu hóa tốc độ tối đa
+lto = true        # Link Time Optimization (giảm kích thước file build)
+codegen-units = 1 # Giúp compiler tối ưu hóa tốt hơn
+panic = "abort"   # Giảm kích thước file bằng cách bỏ qua stack unwinding
+strip = true      # Loại bỏ các ký tự debug để file cực nhẹ
+
