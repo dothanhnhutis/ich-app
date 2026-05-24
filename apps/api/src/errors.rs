@@ -1,8 +1,10 @@
 use application::errors::AppError;
 use axum::Json;
+use axum::extract::rejection::JsonRejection;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use validator::ValidationErrors;
 
 /// Wrapper để implement IntoResponse cho AppError (orphan rule)
 pub struct ApiError(pub AppError);
@@ -26,5 +28,32 @@ impl IntoResponse for ApiError {
 impl From<AppError> for ApiError {
     fn from(err: AppError) -> Self {
         Self(err)
+    }
+}
+
+impl From<JsonRejection> for ApiError {
+    fn from(rejection: JsonRejection) -> Self {
+        Self(AppError::Validation(rejection.body_text()))
+    }
+}
+
+impl From<ValidationErrors> for ApiError {
+    fn from(errors: ValidationErrors) -> Self {
+        let message = errors
+            .field_errors()
+            .iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |e| {
+                    let msg = e
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_else(|| format!("{} không hợp lệ", field));
+                    format!("{}: {}", field, msg)
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        Self(AppError::Validation(message))
     }
 }

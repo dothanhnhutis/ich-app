@@ -14,17 +14,15 @@ impl<R: UserRepository> AuthService<R> {
     }
 
     pub async fn login(&self, request: LoginRequest) -> Result<LoginResponse, AppError> {
-        // 1. Validate input
         request
             .validate()
             .map_err(|e| AppError::Validation(e.to_string()))?;
 
-        // 2. Tìm user theo email
         let user = self
             .user_repo
             .find_by_email(&request.email)
             .await?
-            .ok_or_else(|| AppError::NotFound("Email không tồn tại".into()))?;
+            .ok_or_else(|| AppError::Unauthorized("Email hoặc mật khẩu không đúng".into()))?;
 
         // 3. Verify password
         // TODO: Dùng argon2 để verify password hash
