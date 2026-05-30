@@ -1,0 +1,5 @@
+id,location_id,name,zone_type,deleted_at
+019e02f6-e9e7-7030-8a59-abd9fdbe17df,019e02f3-540d-7bc0-b9f8-1610df194b13,Kho nguyên liệu,RAW_MATERIAL,
+019e2ff9-6a90-78d2-871e-0a6d0247d975,019e02f3-540d-7bc0-b9f8-1610df194b13,Kho thành phẩm,FINISHED_GOODS,
+019e2ff9-6a99-7d1b-9ea6-78eaf4a2010d,019e02f3-540d-7bc0-b9f8-1610df194b13,Kho bao bì,PACKAGING,
+019e2ff9-6aa0-7f31-baa2-0e2ad3326861,019e02f3-540d-7bc0-b9f8-1610df194b13,Kho dung môi,SOLVENT,

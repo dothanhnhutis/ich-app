@@ -29,10 +29,10 @@ export function AppLayout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset className="flex min-h-0 flex-col">
-        <div className="shrink-0 bg-background ">
+        <div className="shrink-0 bg-background">
           <header className="flex h-14 items-center gap-2 border-b px-4">
             <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
+            <Separator orientation="vertical" className="mr-2 h-full" />
             <h1 className="text-base font-semibold">{title}</h1>
           </header>
         </div>

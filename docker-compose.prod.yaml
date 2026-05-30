@@ -1,0 +1,23 @@
+services:
+  postgres:
+    container_name: postgres_container
+    image: postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=pgdb
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - 5432:5432
+    volumes:
+      - ./docker_volumes/postgres:/var/lib/postgresql/data
+      - ./init-sql:/docker-entrypoint-initdb.d
+      # Mount file CSV vào một thư mục tạm trong container để Postgres có thể đọc
+      - ./data:/tmp
+    networks:
+      - mynet
+
+networks:
+  mynet:
+    driver: bridge

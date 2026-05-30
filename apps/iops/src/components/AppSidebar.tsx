@@ -14,7 +14,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { NavLink, useNavigate } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,6 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "./ui/avatar";
-import { Button } from "./ui/button";
 
 type NavEntry = {
   to: string;
@@ -42,6 +41,8 @@ const NAV_ITEMS: NavEntry[] = [
 export function AppSidebar() {
   const navigate = useNavigate();
   const { isMobile } = useSidebar();
+  const { pathname } = useLocation();
+
   return (
     <Sidebar>
       <SidebarHeader>
@@ -65,8 +66,7 @@ export function AppSidebar() {
                 <NavEntryItem
                   key={item.to}
                   item={item}
-                  // active={pathname.startsWith(item.to)}
-                  active={false}
+                  active={pathname.startsWith(item.to)}
                 />
               ))}
             </SidebarMenu>

@@ -10,9 +10,11 @@ pub trait UserRepository: Send + Sync {
         &self,
         email: &str,
     ) -> impl Future<Output = Result<Option<User>, DomainError>> + Send;
+
     fn find_by_id(
         &self,
-        id: &str,
+        id: uuid::Uuid,
     ) -> impl Future<Output = Result<Option<User>, DomainError>> + Send;
-    fn create(&self, user: &User) -> impl Future<Output = Result<User, DomainError>> + Send;
+
+    // fn create(&self, user: &User) -> impl Future<Output = Result<User, DomainError>> + Send;
 }

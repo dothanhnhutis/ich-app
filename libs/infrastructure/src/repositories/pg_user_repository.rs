@@ -78,42 +78,35 @@ impl UserRepository for PgUserRepository {
         row.map(User::try_from).transpose()
     }
 
-    async fn find_by_id(&self, id: &str) -> Result<Option<User>, DomainError> {
-        let uuid = uuid::Uuid::parse_str(id).map_err(|e| DomainError::Internal(e.to_string()))?;
+    async fn find_by_id(&self, id: uuid::Uuid) -> Result<Option<User>, DomainError> {
+        // let uuid = uuid::Uuid::parse_str(id).map_err(|e| DomainError::Internal(e.to_string()))?;
+        let sql = format!("{} WHERE id = $1", SELECT_USER);
+        let row: Option<UserRow> = sqlx::query_as(&sql)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
 
-        let row = sqlx::query_as!(
-            UserRow,
-            r#"
-            SELECT id, email, username, password_hash
-            FROM users
-            WHERE id = $1
-            "#,
-            uuid
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| DomainError::Internal(e.to_string()))?;
-
-        Ok(row.map(|r| r.into()))
+        row.map(User::try_from).transpose()
     }
 
-    async fn create(&self, user: &User) -> Result<User, DomainError> {
-        let row = sqlx::query_as!(
-            UserRow,
-            r#"
-            INSERT INTO users (id, email, username, password_hash)
-            VALUES ($1::UUID, $2, $3, $4)
-            RETURNING id, email, username, password_hash
-            "#,
-            user.id,
-            user.email,
-            user.username,
-            user.password_hash
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    // async fn create(&self, user: &User) -> Result<User, DomainError> {
+    //     let row = sqlx::query_as!(
+    //         UserRow,
+    //         r#"
+    //         INSERT INTO users (id, email, username, password_hash)
+    //         VALUES ($1::UUID, $2, $3, $4)
+    //         RETURNING id, email, username, password_hash
+    //         "#,
+    //         user.id,
+    //         user.email,
+    //         user.username,
+    //         user.password_hash
+    //     )
+    //     .fetch_one(&self.pool)
+    //     .await
+    //     .map_err(|e| DomainError::Internal(e.to_string()))?;
 
-        Ok(row.into())
-    }
+    //     Ok(row.into())
+    // }
 }

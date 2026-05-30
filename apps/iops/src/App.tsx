@@ -4,6 +4,8 @@ import DashboardPage from "./pages/DashboardPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import LoginPage from "./pages/LoginPage";
 import { HashRouter, Navigate, Route, Routes } from "react-router";
+import UserPage from "./pages/UserPage";
+import RolePage from "./pages/RolePage";
 function App() {
   return (
     <HashRouter>
@@ -13,6 +15,8 @@ function App() {
 
         <Route element={<AppLayout />}>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/users" element={<UserPage />} />
+          <Route path="/roles" element={<RolePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
