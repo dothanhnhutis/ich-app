@@ -1,3 +1,3 @@
-id,email,password_hash,username,
-019c0df7-89b5-7628-a136-d9d9d00bf754,gaconght@gmail.com,"$argon2id$v=19$m=65536,t=3,p=4$oDdsbvL66JBFGcGtpM2bVQ$BSuYE86W6ALjeRJmC9I5sv/pr6xXJj3eFGvgS+aF7Io",Thanh Nhut
-019c0df7-89b5-7628-a136-d9d9d00bf755,gaconght001@gmail.com,"$argon2id$v=19$m=19456,t=2,p=1$uytmFknCDAKqD+/Cb3V4MA$a1oTUCvbIRgC5LGB/hC3Dt5EOsB9q1TKBnOzchsM7Mo",Thanh Nhut
+id,email,password_hash,username,status
+019c0df7-89b5-7628-a136-d9d9d00bf754,gaconght@gmail.com,"$argon2id$v=19$m=65536,t=3,p=4$oDdsbvL66JBFGcGtpM2bVQ$BSuYE86W6ALjeRJmC9I5sv/pr6xXJj3eFGvgS+aF7Io",Thanh Nhut,ACTIVE
+019c0df7-89b5-7628-a136-d9d9d00bf755,gaconght001@gmail.com,"$argon2id$v=19$m=19456,t=2,p=1$uytmFknCDAKqD+/Cb3V4MA$a1oTUCvbIRgC5LGB/hC3Dt5EOsB9q1TKBnOzchsM7Mo",Thanh Nhut,ACTIVE

@@ -24,9 +24,28 @@ services:
     networks:
       - mynet
 
+  redis:
+    container_name: redis_container
+    image: redis:7-alpine
+    restart: always
+    # appendonly: bật AOF để dữ liệu cache phiên không mất khi restart
+    command: redis-server --appendonly yes
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - mynet
+
 networks:
   mynet:
     driver: bridge
 
 volumes:
   postgres_data:
+  redis_data:

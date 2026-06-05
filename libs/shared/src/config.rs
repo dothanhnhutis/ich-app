@@ -5,6 +5,20 @@ pub struct AppConfig {
     pub database_url: String,
     pub server_host: String,
     pub server_port: u16,
+    /// Thời gian sống của session (giây). Mặc định 30 ngày.
+    pub session_ttl_secs: i64,
+    /// Đặt cờ `Secure` cho cookie (bật ở production/HTTPS).
+    pub cookie_secure: bool,
+    /// Domain cho cookie (None = mặc định theo host hiện tại).
+    pub cookie_domain: Option<String>,
+    /// Danh sách origin được phép cho CORS (cần khi web app dùng cookie + credentials).
+    pub cors_allowed_origins: Vec<String>,
+    /// URL kết nối Redis (cache phiên).
+    pub redis_url: String,
+    /// TTL của bản cache phiên trong Redis (giây). Ngắn hơn session TTL để giới hạn staleness.
+    pub session_cache_ttl_secs: i64,
+    /// Khoảng tối thiểu giữa 2 lần ghi `expires_at` xuống DB (giây) — throttle.
+    pub session_db_sync_secs: i64,
 }
 
 impl AppConfig {
@@ -17,6 +31,29 @@ impl AppConfig {
                 .unwrap_or_else(|_| "8080".into())
                 .parse()
                 .map_err(|_| anyhow::anyhow!("SERVER_PORT must be a valid port number"))?,
+            session_ttl_secs: env::var("SESSION_TTL_SECS")
+                .unwrap_or_else(|_| "2592000".into()) // 30 ngày
+                .parse()
+                .map_err(|_| anyhow::anyhow!("SESSION_TTL_SECS must be an integer (seconds)"))?,
+            cookie_secure: env::var("COOKIE_SECURE")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            cookie_domain: env::var("COOKIE_DOMAIN").ok(),
+            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
+            session_cache_ttl_secs: env::var("SESSION_CACHE_TTL_SECS")
+                .unwrap_or_else(|_| "3600".into())
+                .parse()
+                .map_err(|_| anyhow::anyhow!("SESSION_CACHE_TTL_SECS must be an integer (seconds)"))?,
+            session_db_sync_secs: env::var("SESSION_DB_SYNC_SECS")
+                .unwrap_or_else(|_| "60".into())
+                .parse()
+                .map_err(|_| anyhow::anyhow!("SESSION_DB_SYNC_SECS must be an integer (seconds)"))?,
         })
     }
 }

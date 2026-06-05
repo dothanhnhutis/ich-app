@@ -12,21 +12,38 @@ ALTER DATABASE pgdb
 ALTER DATABASE pgdb
     SET
         timezone = 'Asia/Ho_Chi_Minh';
--- timezone = 'UTC';
 
--- create refresh_tokens table
-CREATE TABLE refresh_tokens
+
+-- create user_sessions table
+CREATE TABLE user_sessions
 (
-    id         UUID        NOT NULL DEFAULT uuidv7(),
-    user_id    UUID        NOT NULL,
-    token_hash TEXT        NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked    BOOLEAN     NOT NULL DEFAULT FALSE,
-    user_agent TEXT,
-    ip_address TEXT,
-    CONSTRAINT pk_refresh_tokens PRIMARY KEY (id)
+    id            UUID           NOT NULL DEFAULT uuidv7(),
+    user_id       UUID           NOT NULL,
+    token_hash    CHAR(64)       NOT NULL UNIQUE,
+    device_id     VARCHAR(255),            -- Fingerprint do client tự tạo, dùng để nhận ra "cùng máy" dù đổi IP
+    device_name   VARCHAR(255),            -- Human-readable: "Chrome 124 · Windows 11", "MyApp 2.1 · macOS 14"
+    device_type   VARCHAR(20)    NOT NULL, -- 'web' | 'desktop' | 'mobile'
+    platform      VARCHAR(100),            -- "Windows 11" | "macOS 14.5" | "Ubuntu 22.04"
+    app_version   VARCHAR(50),             -- Chỉ có trên desktop app, null với web
+    user_agent    TEXT,                    -- Raw User-Agent header, dùng để debug
+    ip_address    INET,                    -- IP lúc login, dùng để hiển thị "đăng nhập từ đâu"
+
+    revoked_at    TIMESTAMPTZ(3),
+    revoke_reason VARCHAR(20),
+    -- 'LOGOUT'  : user tự logout
+    -- 'FORCED'  : user logout tất cả thiết bị
+    -- 'USER'   : user thu hồi
+    -- 'EXPIRED' : cleanup job đánh dấu sau khi hết hạn
+
+    expires_at    TIMESTAMPTZ(3) NOT NULL,
+    created_at    TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_revoke_reason
+        CHECK (revoke_reason IN ('LOGOUT', 'FORCED', 'USER', 'EXPIRED')),
+    CONSTRAINT pk_user_sessions PRIMARY KEY (id)
 );
+
 
 -- ==========================================================
 -- Danh mục file
@@ -113,15 +130,22 @@ CREATE TABLE IF NOT EXISTS user_roles
 
 CREATE TABLE IF NOT EXISTS users
 (
-    id             UUID           NOT NULL DEFAULT uuidv7(),
-    email          VARCHAR(255)   NOT NULL,
-    password_hash  TEXT           ,
-    username       VARCHAR(100)   ,
-    status         VARCHAR(20)    NOT NULL DEFAULT 'ACTIVE', -- ACTIVE | DEACTIVATED | PENDING_PASSWORD
-    deactivated_at TIMESTAMPTZ(3),                           -- vô hiệu hoá lúc nào
-    created_at     TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
-    CONSTRAINT pk_users PRIMARY KEY (id)
+    id                  UUID           NOT NULL DEFAULT uuidv7(),
+    email               VARCHAR(255)   NOT NULL,
+    password_hash       TEXT,
+    username            VARCHAR(100),
+    status              VARCHAR(20)    NOT NULL DEFAULT 'PENDING_PASSWORD', -- ACTIVE | DEACTIVATED | PENDING_PASSWORD
+    deactivated_at      TIMESTAMPTZ(3),                                     -- vô hiệu hoá lúc nào
+    password_changed_at TIMESTAMPTZ(3),                                     -- lần cuối đổi mật khẩu
+    created_at          TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_users PRIMARY KEY (id),
+    CONSTRAINT chk_users_pending_password
+    CHECK (
+        status = 'PENDING_PASSWORD'
+        OR username IS NOT NULL
+        OR password_hash IS NOT NULL
+    )
 );
 
 CREATE TABLE IF NOT EXISTS user_avatars
@@ -136,32 +160,29 @@ CREATE TABLE IF NOT EXISTS user_avatars
     CONSTRAINT pk_user_avatars PRIMARY KEY (file_id, user_id)
 );
 
-
-CREATE TABLE IF NOT EXISTS password_setup_tokens (
-    id          UUID            NOT NULL DEFAULT uuidv7(),
-    user_id     UUID            NOT NULL,
-    token_hash  CHAR(64)        NOT NULL,
-    expires_at  TIMESTAMPTZ(3)  NOT NULL,
-    used_at     TIMESTAMPTZ(3),
-    created_at  TIMESTAMPTZ(3)  NOT NULL DEFAULT NOW(),
-    CONSTRAINT pk_password_setup_tokens PRIMARY KEY (id),
-    CONSTRAINT uq_password_setup_tokens_token_hash UNIQUE (token_hash),
-    CONSTRAINT fk_password_setup_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS password_tokens
+(
+    id         UUID           NOT NULL DEFAULT uuidv7(),
+    user_id    UUID           NOT NULL,
+    token_hash TEXT           NOT NULL,
+    type       VARCHAR(20)    NOT NULL, -- INIT | RESET-PASSWORD
+    expires_at TIMESTAMPTZ(3) NOT NULL,
+    used_at    TIMESTAMPTZ(3),
+    created_at TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_password_tokens PRIMARY KEY (id),
+    CONSTRAINT uq_password_tokens_token_hash UNIQUE (token_hash),
+    CONSTRAINT chk_password_tokens_type CHECK (type IN ('INIT', 'RESET-PASSWORD'))
 );
-
-CREATE INDEX idx_password_setup_tokens_user_id ON password_setup_tokens(user_id);
-CREATE INDEX idx_password_setup_tokens_expires_at ON password_setup_tokens(expires_at);
-
 
 
 -- ==========================================================
 -- Index
 -- ==========================================================
 
--- create refresh_tokens index
-CREATE INDEX idx_refresh_user ON refresh_tokens (user_id);
-CREATE INDEX idx_token_hash ON refresh_tokens (token_hash);
-CREATE INDEX idx_user_revoked ON refresh_tokens (user_id, revoked);
+-- create user_sessions index
+CREATE INDEX idx_refresh_user ON user_sessions (user_id);
+CREATE UNIQUE INDEX uq_idx_token_hash ON user_sessions (token_hash);
+CREATE INDEX idx_user_revoked ON user_sessions (user_id, revoked_at);
 
 -- create file index
 CREATE INDEX idx_files_deleted_at ON files (deleted_at)
@@ -183,14 +204,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (email);
 -- create user_avatars index
 CREATE INDEX IF NOT EXISTS idx_user_avatars_selected ON user_avatars (is_primary) WHERE is_primary IS TRUE;
 
+-- create password_tokens index
+CREATE INDEX idx_password_tokens_user_id ON password_tokens (user_id);
+CREATE INDEX idx_password_tokens_expires_at ON password_tokens (expires_at);
 
 -- ==========================================================
 -- Khoá ngoại
 -- ==========================================================
 
---- AddForeignKey refresh_tokens table
-ALTER TABLE refresh_tokens
-    ADD CONSTRAINT fk_refresh_tokens_user_id FOREIGN KEY (user_id)
+--- AddForeignKey password_tokens table
+ALTER TABLE password_tokens
+    ADD CONSTRAINT fk_password_tokens_user_id FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE;
+
+--- AddForeignKey user_sessions table
+ALTER TABLE user_sessions
+    ADD CONSTRAINT fk_user_sessions_user_id FOREIGN KEY (user_id)
         REFERENCES users (id) ON DELETE CASCADE;
 
 -- AddForeignKey role_permissions table
@@ -216,9 +245,3 @@ ALTER TABLE user_avatars
 ALTER TABLE user_avatars
     ADD CONSTRAINT fk_user_avatars_file_id FOREIGN KEY (file_id)
         REFERENCES files (id) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- ==========================================================
--- Trigger
--- ==========================================================
-
-

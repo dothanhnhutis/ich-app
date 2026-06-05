@@ -7,12 +7,32 @@ pub struct LoginRequest {
     #[validate(email)]
     pub email: String,
 
-    #[validate(length(min = 8, message = "Password phải ít nhất 8 ký tự"))]
+    #[validate(length(min = 8, message = "Email và mật khẩu không hợp lệ."))]
     pub password: String,
+
+    pub app_version: Option<String>,
+
+    pub platform: Option<String>,
+
+    pub device_type: String,
+
+    pub device_name: Option<String>,
+
+    pub device_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct LoginResponse {
-    pub message: String,
     pub user_id: String,
+    /// Token session THÔ — desktop dùng làm bearer, web app lưu trong cookie.
+    pub session: String,
+    /// Thời gian sống của session, tính bằng giây.
+    pub expires_in: i64,
+}
+
+/// Metadata lấy từ tầng HTTP (không nằm trong body request).
+#[derive(Debug, Default, Clone)]
+pub struct ClientContext {
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
 }
