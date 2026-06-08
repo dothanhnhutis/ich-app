@@ -11,7 +11,11 @@ where
     S: Clone + Send + Sync + 'static,
     AppState: FromRef<S>,
 {
-    Router::new().route("/auth/login", post(auth_handler::login))
+    Router::new()
+        .route("/auth/login", post(auth_handler::login))
+        .route("/auth/setup-account", post(auth_handler::setup_account))
+        .route("/auth/forgot-password", post(auth_handler::forgot_password))
+        .route("/auth/set-password", post(auth_handler::reset_password))
 }
 
 /// Route cần xác thực (middleware require_auth được áp ở routes::create_router).

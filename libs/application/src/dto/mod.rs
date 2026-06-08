@@ -1,3 +1,9 @@
 pub mod auth_dto;
+pub mod bin_dto;
+pub mod location_dto;
+pub mod pagination;
+pub mod permission_dto;
+pub mod role_dto;
+pub mod zone_dto;
 pub mod session_dto;
 pub mod user_dto;

@@ -1,4 +1,4 @@
-COPY users (id, email, password_hash, username)
+COPY users (id, email, password_hash, username, status)
     FROM '/tmp/users.csv' WITH (FORMAT csv, HEADER true, DELIMITER ',');
 
 COPY roles (id, name, description, status, can_delete, can_update)

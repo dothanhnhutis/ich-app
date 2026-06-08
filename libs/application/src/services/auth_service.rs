@@ -56,12 +56,16 @@ where
             .validate()
             .map_err(|e| AppError::Validation(e.to_string()))?;
 
+        println!("0");
+        println!("{}", request.email);
         let user = self
             .user_repo
             .find_by_email(&request.email)
             .await?
             .ok_or_else(|| AppError::Unauthorized("Email hoặc mật khẩu không đúng".into()))?;
 
+        println!("{:#?}", user);
+        println!("0,5");
         match user.status {
             UserStatus::Active => {}
             UserStatus::PendingPassword => {
@@ -78,6 +82,8 @@ where
             AppError::Unauthorized("Tài khoản chưa đặt mật khẩu. Vui lòng kiểm tra email.".into())
         })?;
 
+        println!("1");
+
         // 3. Verify password
         let parsed = argon2::PasswordHash::new(&hash_str)
             .map_err(|e| AppError::Internal(format!("Invalid password hash: {}", e)))?;
@@ -85,6 +91,7 @@ where
             .verify_password(request.password.as_bytes(), &parsed)
             .map_err(|_| AppError::Unauthorized("Email hoặc mật khẩu không đúng".into()))?;
 
+        println!("2");
         // 4. Tạo session: sinh token, lưu hash, tính hạn dùng
         let token = SessionToken::generate();
         let expires_at = chrono::Utc::now() + self.session_ttl;
@@ -167,7 +174,11 @@ where
 
         // 4. Throttle ghi DB; lỗi DB chỉ log (giá trị in-memory đã gia hạn).
         if now - db_synced_at >= self.db_sync_interval {
-            match self.session_repo.touch_expires(session.id, new_expires).await {
+            match self
+                .session_repo
+                .touch_expires(session.id, new_expires)
+                .await
+            {
                 Ok(()) => db_synced_at = now,
                 Err(e) => tracing::warn!("touch_expires lỗi: {e}"),
             }

@@ -7,7 +7,9 @@ use axum::{Extension, Json};
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde_json::json;
 
-use application::dto::auth_dto::{ClientContext, LoginRequest};
+use application::dto::auth_dto::{
+    ClientContext, ForgotPasswordRequest, LoginRequest, SetPasswordRequest, SetupAccountRequest,
+};
 
 use crate::AppState;
 use crate::errors::ApiError;
@@ -81,6 +83,36 @@ pub async fn logout_all(
         jar.remove(removal),
         Json(json!({ "message": "Đã đăng xuất khỏi tất cả thiết bị" })),
     ))
+}
+
+/// Đặt mật khẩu từ token INIT trong email (public — token tự xác thực).
+/// Thiết lập tài khoản (token INIT): nhập username + mật khẩu khi admin tạo tài khoản.
+pub async fn setup_account(
+    State(state): State<AppState>,
+    ValidatedJson(payload): ValidatedJson<SetupAccountRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.account_service.setup_account(payload).await?;
+    Ok(Json(json!({ "message": "Thiết lập tài khoản thành công" })))
+}
+
+/// Đặt lại mật khẩu (token RESET-PASSWORD) từ link mail quên mật khẩu.
+pub async fn reset_password(
+    State(state): State<AppState>,
+    ValidatedJson(payload): ValidatedJson<SetPasswordRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.account_service.reset_password(payload).await?;
+    Ok(Json(json!({ "message": "Đặt lại mật khẩu thành công" })))
+}
+
+/// Quên mật khẩu: nhập email để nhận link đặt lại. Luôn trả 200 chung chung (không lộ email).
+pub async fn forgot_password(
+    State(state): State<AppState>,
+    ValidatedJson(payload): ValidatedJson<ForgotPasswordRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.account_service.forgot_password(payload).await?;
+    Ok(Json(json!({
+        "message": "Nếu email tồn tại, liên kết đặt lại mật khẩu đã được gửi"
+    })))
 }
 
 /// Đọc IP client: ưu tiên `X-Forwarded-For` (token đầu) → `X-Real-IP` → địa chỉ peer.

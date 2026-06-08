@@ -36,3 +36,34 @@ pub struct ClientContext {
     pub user_agent: Option<String>,
     pub ip_address: Option<String>,
 }
+
+/// Đặt lại mật khẩu từ link trong email quên mật khẩu (token RESET-PASSWORD).
+#[derive(Debug, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct SetPasswordRequest {
+    pub token: String,
+
+    #[validate(length(min = 8, message = "Mật khẩu tối thiểu 8 ký tự"))]
+    pub password: String,
+}
+
+/// Thiết lập tài khoản từ link mail admin tạo (token INIT): nhập username + mật khẩu.
+#[derive(Debug, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct SetupAccountRequest {
+    pub token: String,
+
+    #[validate(length(min = 1, max = 100, message = "Tên đăng nhập 1-100 ký tự"))]
+    pub username: String,
+
+    #[validate(length(min = 8, message = "Mật khẩu tối thiểu 8 ký tự"))]
+    pub password: String,
+}
+
+/// Yêu cầu quên mật khẩu: nhập email để nhận link đặt lại.
+#[derive(Debug, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct ForgotPasswordRequest {
+    #[validate(email(message = "Email không hợp lệ"))]
+    pub email: String,
+}

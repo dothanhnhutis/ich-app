@@ -1,7 +1,19 @@
+mod bin;
 mod cached_session;
+mod location;
+mod password_token;
+mod permission;
+mod role;
 mod session;
 mod user;
+mod zone;
 
+pub use bin::*;
 pub use cached_session::*;
+pub use location::*;
+pub use password_token::*;
+pub use permission::*;
+pub use role::*;
 pub use session::*;
 pub use user::*;
+pub use zone::*;

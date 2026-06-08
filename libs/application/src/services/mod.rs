@@ -1,1 +1,7 @@
+pub mod account_service;
 pub mod auth_service;
+pub mod bin_service;
+pub mod location_service;
+pub mod role_service;
+pub mod user_service;
+pub mod zone_service;

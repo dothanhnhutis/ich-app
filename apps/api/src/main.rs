@@ -1,15 +1,24 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use application::services::account_service::AccountService;
 use application::services::auth_service::AuthService;
+use application::services::bin_service::BinService;
+use application::services::location_service::LocationService;
+use application::services::role_service::RoleService;
+use application::services::user_service::UserService;
+use application::services::zone_service::ZoneService;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderValue, Method};
 use axum::{Router, extract::FromRef};
 use chrono::Duration;
 use dotenvy::dotenv;
 use infrastructure::{
-    RedisSessionCache, init_db_pool, init_redis,
-    repositories::{PgUserRepository, PgUserSessionRepository},
+    RabbitEmailPublisher, RedisSessionCache, init_db_pool, init_redis,
+    repositories::{
+        PgBinRepository, PgLocationRepository, PgPasswordTokenRepository, PgRoleRepository,
+        PgUserRepository, PgUserSessionRepository, PgZoneRepository,
+    },
 };
 use shared::config::AppConfig;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -25,6 +34,21 @@ mod routes;
 pub struct AppState {
     pub auth_service:
         Arc<AuthService<PgUserRepository, PgUserSessionRepository, RedisSessionCache>>,
+    pub user_service: Arc<
+        UserService<
+            PgUserRepository,
+            PgRoleRepository,
+            PgPasswordTokenRepository,
+            RabbitEmailPublisher,
+        >,
+    >,
+    pub account_service: Arc<
+        AccountService<PgUserRepository, PgPasswordTokenRepository, RabbitEmailPublisher>,
+    >,
+    pub role_service: Arc<RoleService<PgRoleRepository>>,
+    pub location_service: Arc<LocationService<PgLocationRepository>>,
+    pub zone_service: Arc<ZoneService<PgZoneRepository, PgLocationRepository>>,
+    pub bin_service: Arc<BinService<PgBinRepository, PgZoneRepository>>,
     pub cookie_secure: bool,
     pub cookie_domain: Option<String>,
 }
@@ -50,21 +74,57 @@ async fn main() {
         .expect("Failed to connect to Redis");
     let cache = RedisSessionCache::new(redis_conn);
 
-    // 5. Dependency Injection — tạo các repository và service
-    // PgPool clone rẻ (Arc bên trong) — cả hai repo dùng chung pool.
+    // 5. Kết nối RabbitMQ (publisher email job). Bắt buộc.
+    let email_publisher =
+        RabbitEmailPublisher::connect(&config.rabbitmq_url, &config.rabbitmq_email_queue)
+            .await
+            .expect("Failed to connect to RabbitMQ");
+
+    // 6. Dependency Injection — PgPool/repo Clone rẻ (Arc bên trong), dùng chung pool.
     let user_repo = PgUserRepository::new(pool.clone());
-    let session_repo = PgUserSessionRepository::new(pool);
+    let session_repo = PgUserSessionRepository::new(pool.clone());
+    let role_repo = PgRoleRepository::new(pool.clone());
+    let token_repo = PgPasswordTokenRepository::new(pool.clone());
+    let location_repo = PgLocationRepository::new(pool.clone());
+    let zone_repo = PgZoneRepository::new(pool.clone());
+    let bin_repo = PgBinRepository::new(pool.clone());
+
     let auth_service = Arc::new(AuthService::new(
-        user_repo,
+        user_repo.clone(),
         session_repo,
         cache,
         Duration::seconds(config.session_ttl_secs),
         Duration::seconds(config.session_cache_ttl_secs),
         Duration::seconds(config.session_db_sync_secs),
     ));
+    let user_service = Arc::new(UserService::new(
+        user_repo.clone(),
+        role_repo.clone(),
+        token_repo.clone(),
+        email_publisher.clone(),
+        config.app_web_url.clone(),
+        config.password_token_ttl_secs,
+    ));
+    let account_service = Arc::new(AccountService::new(
+        user_repo,
+        token_repo,
+        email_publisher,
+        config.app_web_url.clone(),
+        config.reset_password_token_ttl_secs,
+    ));
+    let role_service = Arc::new(RoleService::new(role_repo));
+    let location_service = Arc::new(LocationService::new(location_repo.clone()));
+    let zone_service = Arc::new(ZoneService::new(zone_repo.clone(), location_repo));
+    let bin_service = Arc::new(BinService::new(bin_repo, zone_repo));
 
     let state = AppState {
         auth_service,
+        user_service,
+        account_service,
+        role_service,
+        location_service,
+        zone_service,
+        bin_service,
         cookie_secure: config.cookie_secure,
         cookie_domain: config.cookie_domain,
     };
@@ -85,6 +145,7 @@ async fn main() {
             Method::GET,
             Method::POST,
             Method::PUT,
+            Method::PATCH,
             Method::DELETE,
             Method::OPTIONS,
         ])

@@ -19,6 +19,16 @@ pub struct AppConfig {
     pub session_cache_ttl_secs: i64,
     /// Khoảng tối thiểu giữa 2 lần ghi `expires_at` xuống DB (giây) — throttle.
     pub session_db_sync_secs: i64,
+    /// URL kết nối RabbitMQ.
+    pub rabbitmq_url: String,
+    /// Tên queue chứa email job.
+    pub rabbitmq_email_queue: String,
+    /// Base URL của web app (dùng dựng link đặt mật khẩu).
+    pub app_web_url: String,
+    /// TTL của token thiết lập tài khoản INIT (giây). Mặc định 24h.
+    pub password_token_ttl_secs: i64,
+    /// TTL của token đặt lại mật khẩu RESET (giây). Mặc định 4h.
+    pub reset_password_token_ttl_secs: i64,
 }
 
 impl AppConfig {
@@ -54,6 +64,21 @@ impl AppConfig {
                 .unwrap_or_else(|_| "60".into())
                 .parse()
                 .map_err(|_| anyhow::anyhow!("SESSION_DB_SYNC_SECS must be an integer (seconds)"))?,
+            rabbitmq_url: env::var("RABBITMQ_URL")
+                .unwrap_or_else(|_| "amqp://guest:guest@127.0.0.1:5672/%2f".into()),
+            rabbitmq_email_queue: env::var("RABBITMQ_EMAIL_QUEUE")
+                .unwrap_or_else(|_| "email_jobs".into()),
+            app_web_url: env::var("APP_WEB_URL").unwrap_or_else(|_| "http://localhost:5173".into()),
+            password_token_ttl_secs: env::var("PASSWORD_TOKEN_TTL_SECS")
+                .unwrap_or_else(|_| "86400".into())
+                .parse()
+                .map_err(|_| anyhow::anyhow!("PASSWORD_TOKEN_TTL_SECS must be an integer (seconds)"))?,
+            reset_password_token_ttl_secs: env::var("RESET_PASSWORD_TOKEN_TTL_SECS")
+                .unwrap_or_else(|_| "14400".into()) // 4h
+                .parse()
+                .map_err(|_| {
+                    anyhow::anyhow!("RESET_PASSWORD_TOKEN_TTL_SECS must be an integer (seconds)")
+                })?,
         })
     }
 }

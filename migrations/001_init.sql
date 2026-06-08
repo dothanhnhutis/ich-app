@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS users
     username            VARCHAR(100),
     status              VARCHAR(20)    NOT NULL DEFAULT 'PENDING_PASSWORD', -- ACTIVE | DEACTIVATED | PENDING_PASSWORD
     deactivated_at      TIMESTAMPTZ(3),                                     -- vô hiệu hoá lúc nào
+    deleted_at          TIMESTAMPTZ(3),                                     -- xoá mềm
     password_changed_at TIMESTAMPTZ(3),                                     -- lần cuối đổi mật khẩu
     created_at          TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
@@ -176,6 +177,156 @@ CREATE TABLE IF NOT EXISTS password_tokens
 
 
 -- ==========================================================
+-- QUẢN LÝ KHO (WAREHOUSE STRUCTURE)
+-- ==========================================================
+
+-- Vị trí kho vật lý (toà nhà, chi nhánh)
+CREATE TABLE IF NOT EXISTS locations
+(
+    id         UUID           NOT NULL DEFAULT uuidv7(),
+    code       VARCHAR(50)    NOT NULL,
+    name       VARCHAR(150)   NOT NULL,
+    address    VARCHAR(255),
+    deleted_at TIMESTAMPTZ(3),
+    created_at TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_locations PRIMARY KEY (id)
+);
+
+-- Khu vực trong kho (zone)
+CREATE TABLE IF NOT EXISTS warehouse_zones
+(
+    id                  UUID           NOT NULL DEFAULT uuidv7(),
+    location_id         UUID           NOT NULL,
+    name                VARCHAR(150)   NOT NULL,
+    zone_type           VARCHAR(50)    NOT NULL,
+    temp_min_c          DOUBLE PRECISION,
+    temp_max_c          DOUBLE PRECISION,
+    humidity_max_pct    DOUBLE PRECISION,
+    is_light_protected  BOOLEAN        NOT NULL DEFAULT FALSE,
+    is_ventilated       BOOLEAN        NOT NULL DEFAULT FALSE,
+    is_explosion_proof  BOOLEAN        NOT NULL DEFAULT FALSE,
+    deleted_at          TIMESTAMPTZ(3),
+    created_at          TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_warehouse_zones PRIMARY KEY (id),
+    CONSTRAINT chk_warehouse_zones_type CHECK (zone_type IN (
+                                                             'FINISHED_GOODS',
+                                                             'RAW_MATERIAL',
+                                                             'PACKAGING',
+                                                             'QUARANTINE',
+                                                             'REJECT',
+                                                             'RETURN',
+                                                             'UTILITY'
+        )),
+    CONSTRAINT chk_warehouse_zones_temp_range CHECK (
+        temp_min_c IS NULL OR temp_max_c IS NULL OR temp_min_c <= temp_max_c
+        ),
+    CONSTRAINT chk_warehouse_zones_humidity CHECK (
+        humidity_max_pct IS NULL OR (humidity_max_pct >= 0 AND humidity_max_pct <= 100)
+        )
+);
+
+-- Ô/kệ lưu trữ trong khu vực
+CREATE TABLE IF NOT EXISTS storage_bins
+(
+    id         UUID           NOT NULL DEFAULT uuidv7(),
+    zone_id    UUID           NOT NULL,
+    code       VARCHAR(50)    NOT NULL,
+    name       VARCHAR(255)   NOT NULL,
+    deleted_at TIMESTAMPTZ(3),
+    created_at TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_storage_bins PRIMARY KEY (id)
+);
+
+
+-- ==========================================================
+-- NHÀ CUNG CẤP (VENDORS)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS vendors
+(
+    id          UUID           NOT NULL DEFAULT uuidv7(),
+    code        VARCHAR(50)    NOT NULL,                    -- mã nội bộ vendor
+    name        VARCHAR(255)   NOT NULL,
+    vendor_type VARCHAR(20)    NOT NULL DEFAULT 'SUPPLIER', -- SUPPLIER | MANUFACTURER | BOTH
+    tax_code    VARCHAR(50),
+    address     VARCHAR(255),
+    phone       VARCHAR(50),
+    email       VARCHAR(255),
+    notes       TEXT,
+    deleted_at  TIMESTAMPTZ(3),
+    created_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_vendors PRIMARY KEY (id),
+    CONSTRAINT uq_vendors_code UNIQUE (code),
+    CONSTRAINT chk_vendors_type CHECK (vendor_type IN ('SUPPLIER', 'MANUFACTURER', 'BOTH'))
+);
+
+CREATE TABLE IF NOT EXISTS vendor_items
+(
+    id         UUID           NOT NULL DEFAULT uuidv7(),
+    vendor_id  UUID           NOT NULL,
+    item_id    UUID           NOT NULL,
+    created_at TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_vendor_items PRIMARY KEY (id),
+    CONSTRAINT uq_vendor_items UNIQUE (vendor_id, item_id)
+);
+CREATE INDEX idx_vendor_items_item ON vendor_items (item_id);
+
+
+
+-- ==========================================================
+-- DANH MỤC VẬT TƯ (ITEMS)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS items
+(
+    id          UUID           NOT NULL DEFAULT uuidv7(),
+    sku         VARCHAR(50)    NOT NULL, -- mã nội bộ
+    name        VARCHAR(255)   NOT NULL,
+    type        VARCHAR(20)    NOT NULL, -- CHEMICAL | PACKAGING | UTILITY | FINISHED_GOOD
+    base_uom    VARCHAR(20)    NOT NULL, -- 'kg' | 'L' | 'pcs' | 'g' | 'mL' - LOCK khi đã có inventory_transactions
+    description TEXT,
+    deleted_at  TIMESTAMPTZ(3),
+    created_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_items PRIMARY KEY (id),
+    CONSTRAINT uq_items_sku UNIQUE (sku),
+    CONSTRAINT chk_items_type CHECK (type IN ('CHEMICAL', 'PACKAGING', 'UTILITY', 'FINISHED_GOOD'))
+);
+CREATE INDEX idx_items_type ON items (type) WHERE deleted_at IS NULL;
+CREATE INDEX idx_items_name ON items (name) WHERE deleted_at IS NULL;
+
+
+
+-- ==========================================================
+-- CHUYỂN ĐỔI ĐƠN VỊ (UOM CONVERSION)
+-- ==========================================================
+-- Lưu các đơn vị quy đổi của 1 item (alternative ↔ base_uom).
+-- Base UOM lưu ở items.base_uom — bảng này chỉ chứa các đơn vị thay thế.
+-- Ví dụ: items.base_uom='kg', conversion: 'Phuy 250kg' → factor=250 (1 Phuy = 250 kg).
+CREATE TABLE IF NOT EXISTS item_uom_conversions
+(
+    id                UUID           NOT NULL DEFAULT uuidv7(),
+    item_id           UUID           NOT NULL,
+    alternative_uom   VARCHAR(100)   NOT NULL, -- 'Phuy 250kg' | 'Thùng' | 'Bao'
+    conversion_factor DECIMAL(15, 6) NOT NULL CHECK (conversion_factor > 0),
+    is_purchase_uom   BOOLEAN        NOT NULL DEFAULT TRUE,
+    deleted_at        TIMESTAMPTZ(3),
+    created_at        TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_item_uom_conversions PRIMARY KEY (id)
+);
+-- Tránh trùng tên đơn vị trong cùng 1 item
+CREATE UNIQUE INDEX uix_item_uom_name
+    ON item_uom_conversions (item_id, alternative_uom)
+    WHERE deleted_at IS NULL;
+
+
+
+
+-- ==========================================================
 -- Index
 -- ==========================================================
 
@@ -199,7 +350,8 @@ CREATE INDEX IF NOT EXISTS idx_roles_status ON roles (status) WHERE deleted_at I
 CREATE INDEX IF NOT EXISTS idx_roles_name_status_active ON roles (name, status) WHERE deleted_at IS NULL;
 
 -- create users index
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (email);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (email) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_status ON users (status) WHERE deleted_at IS NULL;
 
 -- create user_avatars index
 CREATE INDEX IF NOT EXISTS idx_user_avatars_selected ON user_avatars (is_primary) WHERE is_primary IS TRUE;
@@ -207,6 +359,19 @@ CREATE INDEX IF NOT EXISTS idx_user_avatars_selected ON user_avatars (is_primary
 -- create password_tokens index
 CREATE INDEX idx_password_tokens_user_id ON password_tokens (user_id);
 CREATE INDEX idx_password_tokens_expires_at ON password_tokens (expires_at);
+
+-- create warehouse_zones index
+CREATE INDEX IF NOT EXISTS idx_warehouse_zones_location_id ON warehouse_zones (location_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_warehouse_zones_type ON warehouse_zones (zone_type) WHERE deleted_at IS NULL;
+-- create storage_bins index
+CREATE INDEX IF NOT EXISTS idx_storage_bins_zone_id ON storage_bins (zone_id) WHERE deleted_at IS NULL;
+
+-- partial unique index cho warehouse (cho phép tái dùng code/name sau xoá mềm — đồng nhất users/roles/files)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_locations_code ON locations (code) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_warehouse_zones_loc_name ON warehouse_zones (location_id, name) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_storage_bins_code ON storage_bins (code) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_storage_bins_zone_name ON storage_bins (zone_id, name) WHERE deleted_at IS NULL;
+
 
 -- ==========================================================
 -- Khoá ngoại
@@ -245,3 +410,26 @@ ALTER TABLE user_avatars
 ALTER TABLE user_avatars
     ADD CONSTRAINT fk_user_avatars_file_id FOREIGN KEY (file_id)
         REFERENCES files (id) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--- AddForeignKey warehouse_zones table
+ALTER TABLE warehouse_zones
+    ADD CONSTRAINT fk_warehouse_zones_location_id FOREIGN KEY (location_id)
+        REFERENCES locations (id) ON DELETE RESTRICT;
+
+--- AddForeignKey storage_bins table
+ALTER TABLE storage_bins
+    ADD CONSTRAINT fk_storage_bins_zone_id FOREIGN KEY (zone_id)
+        REFERENCES warehouse_zones (id) ON DELETE RESTRICT;
+
+--- AddForeignKey vendor_items table
+ALTER TABLE vendor_items
+    ADD CONSTRAINT fk_vendor_items_vendor FOREIGN KEY (vendor_id)
+        REFERENCES vendors (id) ON DELETE RESTRICT;
+ALTER TABLE vendor_items
+    ADD CONSTRAINT fk_vendor_items_item FOREIGN KEY (item_id)
+        REFERENCES items (id) ON DELETE RESTRICT;
+
+ --- AddForeignKey item_uom_conversions table
+ALTER TABLE item_uom_conversions
+    ADD CONSTRAINT fk_item_uom_conversions_item FOREIGN KEY (item_id)
+        REFERENCES items (id) ON DELETE RESTRICT;

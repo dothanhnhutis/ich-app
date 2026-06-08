@@ -17,5 +17,15 @@ id,code,description
 019c0cd2-3751-77e4-bdce-e9337c242887,ORDER_CANCEL,Huỷ đơn nhập
 019c0cd2-3751-7860-8b85-9c86c6e5bf01,RECEIPT_VIEW,Xem phiếu nhận
 019c0cd2-3751-78e6-9614-03f6ac611fe3,RECEIPT_CREATE,Tạo phiếu nhận
-019c0cd2-3751-7988-bcff-164e4854cfe8,STOCK_VIEW,Xem tồn kho
-019c0cd2-3751-7a0d-bef7-72bf918d6890,STOCK_ADJUST,Điều chỉnh tồn kho
+019ea1e1-6cea-78cd-89b2-6c5cfc2fd6d9,LOCATION_VIEW,Xem kho
+019ea1e1-6cea-7e45-a91b-51d184281607,LOCATION_CREATE,Tạo kho
+019ea1e1-6cea-7e94-824d-956f0d1c3da1,LOCATION_UPDATE,Cập nhật kho
+019ea1e1-6cea-7ec6-ab78-a644bce755ae,LOCATION_DELETE,Xóa kho
+019ea1e1-6cea-7ef9-aa58-71dcd7b62a3c,ZONE_VIEW,Xem khu vực kho
+019ea1e1-6cea-7f20-af93-31fcb795338e,ZONE_CREATE,Tạo khu vực kho
+019ea1e1-6cea-7f49-93f2-3e66e95469c6,ZONE_UPDATE,Cập nhật khu vực kho
+019ea1e1-6cea-7f73-b2e9-11d946fc6a9b,ZONE_DELETE,Xóa khu vực kho
+019ea1e1-6cea-7f9d-b91d-19bd05f8382f,BIN_VIEW,Xem kệ lưu trữ
+019ea1e1-6cea-7fcf-8d7e-0377df89f282,BIN_CREATE,Tạo kệ lưu trữ
+019ea1e1-6cea-7ff9-a26e-143326aeedc7,BIN_UPDATE,Cập nhật kệ lưu trữ
+019ea1e1-6ceb-7021-a173-8bb2f0f00189,BIN_DELETE,Xóa kệ lưu trữ
