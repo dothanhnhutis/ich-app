@@ -7,10 +7,10 @@ id,code,description
 019c0cd2-3751-7049-8687-cca003aa2cb7,ROLE_CREATE,Tạo role
 019c0cd2-3751-70ca-be57-f52d9c310b4e,ROLE_UPDATE,Cập nhật role
 019c0cd2-3751-7176-8e97-ca2def7481ea,ROLE_DELETE,Xoá role
-019c0cd2-3751-7221-8563-f8aad7915c4b,CHEMICAL_VIEW,Xem nguyên liệu
-019c0cd2-3751-7463-88cb-51f4e3a2c1eb,CHEMICAL_CREATE,Tạo nguyên liệu
-019c0cd2-3751-753f-991d-fbe57deebd42,CHEMICAL_UPDATE,Cập nhật nguyên liệu
-019c0cd2-3751-75d0-b385-03d435af7008,CHEMICAL_DELETE,Xoá nguyên liệu
+019c0cd2-3751-7221-8563-f8aad7915c4b,RAW_MATERIAL_VIEW,Xem nguyên liệu thô
+019c0cd2-3751-7463-88cb-51f4e3a2c1eb,RAW_MATERIAL_CREATE,Tạo nguyên liệu thô
+019c0cd2-3751-753f-991d-fbe57deebd42,RAW_MATERIAL_UPDATE,Cập nhật nguyên liệu thô
+019c0cd2-3751-75d0-b385-03d435af7008,RAW_MATERIAL_DELETE,Xoá nguyên liệu thô
 019c0cd2-3751-7658-aece-520f74c19b71,ORDER_VIEW,Xem đơn nhập
 019c0cd2-3751-76d8-b73a-e982e0099c30,ORDER_CREATE,Tạo đơn nhập
 019c0cd2-3751-775c-a8c4-c2e86049f732,ORDER_UPDATE,Cập nhật đơn nhập
@@ -29,3 +29,7 @@ id,code,description
 019ea1e1-6cea-7fcf-8d7e-0377df89f282,BIN_CREATE,Tạo kệ lưu trữ
 019ea1e1-6cea-7ff9-a26e-143326aeedc7,BIN_UPDATE,Cập nhật kệ lưu trữ
 019ea1e1-6ceb-7021-a173-8bb2f0f00189,BIN_DELETE,Xóa kệ lưu trữ
+52be7e8b-6c7f-4e3a-8db2-1c943c0a4d5b,VENDOR_VIEW,Xem nhà cung cấp
+bf8681f2-b76f-419a-8bcc-99fbef61da9d,VENDOR_CREATE,Tạo nhà cung cấp
+19eb6485-2045-47eb-9421-d49a7b07e8d4,VENDOR_UPDATE,Cập nhật nhà cung cấp
+338233dc-74ea-4ddc-bf6c-c4541a07f13e,VENDOR_DELETE,Xoá nhà cung cấp

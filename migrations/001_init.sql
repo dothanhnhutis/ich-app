@@ -259,7 +259,6 @@ CREATE TABLE IF NOT EXISTS vendors
     created_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
     CONSTRAINT pk_vendors PRIMARY KEY (id),
-    CONSTRAINT uq_vendors_code UNIQUE (code),
     CONSTRAINT chk_vendors_type CHECK (vendor_type IN ('SUPPLIER', 'MANUFACTURER', 'BOTH'))
 );
 
@@ -275,6 +274,10 @@ CREATE TABLE IF NOT EXISTS vendor_items
 );
 CREATE INDEX idx_vendor_items_item ON vendor_items (item_id);
 
+-- vendors partial index (tái dùng code sau xoá mềm — đồng nhất convention soft-delete)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_vendors_code ON vendors (code) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_vendors_type ON vendors (vendor_type) WHERE deleted_at IS NULL;
+
 
 
 -- ==========================================================
@@ -282,19 +285,40 @@ CREATE INDEX idx_vendor_items_item ON vendor_items (item_id);
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS items
 (
-    id          UUID           NOT NULL DEFAULT uuidv7(),
-    sku         VARCHAR(50)    NOT NULL, -- mã nội bộ
-    name        VARCHAR(255)   NOT NULL,
-    type        VARCHAR(20)    NOT NULL, -- CHEMICAL | PACKAGING | UTILITY | FINISHED_GOOD
-    base_uom    VARCHAR(20)    NOT NULL, -- 'kg' | 'L' | 'pcs' | 'g' | 'mL' - LOCK khi đã có inventory_transactions
-    description TEXT,
-    deleted_at  TIMESTAMPTZ(3),
-    created_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    id                UUID           NOT NULL DEFAULT uuidv7(),
+    sku               VARCHAR(50)    NOT NULL, -- mã nội bộ
+    name              VARCHAR(255)   NOT NULL,
+    type              VARCHAR(20)    NOT NULL, -- RAW_MATERIAL | PACKAGING | UTILITY | SEMI_FINISHED | FINISHED_GOODS
+    base_uom          VARCHAR(20)    NOT NULL, -- 'kg'|'L'|'pcs'|'g'|'mL' - LOCK (app) khi đã có inventory_transactions
+    packaging_level   VARCHAR(20),             -- chỉ khi type=PACKAGING: PRIMARY|SECONDARY|TERTIARY|CARTON
+    is_purchasable    BOOLEAN        NOT NULL DEFAULT FALSE, -- mua từ vendor
+    is_sellable       BOOLEAN        NOT NULL DEFAULT FALSE, -- bán cho khách
+    has_bom           BOOLEAN        NOT NULL DEFAULT FALSE, -- tự sản xuất (có BOM)
+    is_lot_controlled BOOLEAN        NOT NULL DEFAULT TRUE,  -- bắt buộc gắn lô/HSD
+    is_phantom        BOOLEAN        NOT NULL DEFAULT FALSE, -- BTP ảo: nổ thẳng component khi explode BOM
+    density_g_ml      DECIMAL(10, 6),          -- khối lượng riêng (quy đổi kg<->L); NULL cho item rắn/pcs
+    shelf_life_days   INTEGER,                 -- HSD mặc định (suy ra expiration_date khi thiếu)
+    pao_months        SMALLINT,                -- Period After Opening (thành phẩm)
+    inci_name         VARCHAR(255),            -- nhãn thành phần (nguyên liệu)
+    cas_number        VARCHAR(20),
+    description       TEXT,
+    deleted_at        TIMESTAMPTZ(3),
+    created_at        TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
     CONSTRAINT pk_items PRIMARY KEY (id),
-    CONSTRAINT uq_items_sku UNIQUE (sku),
-    CONSTRAINT chk_items_type CHECK (type IN ('CHEMICAL', 'PACKAGING', 'UTILITY', 'FINISHED_GOOD'))
+    CONSTRAINT chk_items_type CHECK (type IN ('RAW_MATERIAL', 'PACKAGING', 'UTILITY', 'SEMI_FINISHED', 'FINISHED_GOODS')),
+    CONSTRAINT chk_items_pkg_level CHECK (
+        (type = 'PACKAGING' AND packaging_level IS NOT NULL
+            AND packaging_level IN ('PRIMARY', 'SECONDARY', 'TERTIARY', 'CARTON'))
+        OR (type <> 'PACKAGING' AND packaging_level IS NULL)
+        ),
+    CONSTRAINT chk_items_phantom    CHECK (NOT is_phantom OR has_bom),
+    CONSTRAINT chk_items_density    CHECK (density_g_ml    IS NULL OR density_g_ml    > 0),
+    CONSTRAINT chk_items_shelf_life CHECK (shelf_life_days IS NULL OR shelf_life_days > 0),
+    CONSTRAINT chk_items_pao        CHECK (pao_months      IS NULL OR pao_months      > 0)
 );
+-- sku: partial unique (tái dùng sku sau xoá mềm — đồng nhất convention)
+CREATE UNIQUE INDEX uq_items_sku ON items (sku) WHERE deleted_at IS NULL;
 CREATE INDEX idx_items_type ON items (type) WHERE deleted_at IS NULL;
 CREATE INDEX idx_items_name ON items (name) WHERE deleted_at IS NULL;
 
@@ -322,6 +346,76 @@ CREATE TABLE IF NOT EXISTS item_uom_conversions
 CREATE UNIQUE INDEX uix_item_uom_name
     ON item_uom_conversions (item_id, alternative_uom)
     WHERE deleted_at IS NULL;
+-- index FULL nuôi FK reference-check (phủ cả hàng đã xoá mềm)
+CREATE INDEX idx_item_uom_conversions_item ON item_uom_conversions (item_id);
+
+
+
+-- ==========================================================
+-- ĐỊNH MỨC NGUYÊN VẬT LIỆU (BOM)
+-- 1 item output (SEMI_FINISHED/FINISHED_GOODS) có 1 HOẶC NHIỀU BOM.
+-- bom_type: FORMULA (bulk, %/khối lượng) | PACKING (chiết rót bulk + bao bì + quà tặng).
+-- Đa cấp tự nhiên qua cây bom_lines. Ràng buộc cycle/guard xoá enforce ở TẦNG APP.
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS boms
+(
+    id             UUID           NOT NULL DEFAULT uuidv7(),
+    output_item_id UUID           NOT NULL,                      -- item thành phẩm/bán thành phẩm của BOM
+    bom_type       VARCHAR(20)    NOT NULL,                      -- FORMULA | PACKING
+    code           VARCHAR(50)    NOT NULL,
+    name           VARCHAR(255)   NOT NULL,
+    version_no     INTEGER        NOT NULL DEFAULT 1,
+    status         VARCHAR(20)    NOT NULL DEFAULT 'DRAFT',      -- DRAFT | ACTIVE | OBSOLETE
+    is_default     BOOLEAN        NOT NULL DEFAULT FALSE,
+    qty_basis      VARCHAR(20)    NOT NULL DEFAULT 'ABSOLUTE',   -- PERCENT (FORMULA ~100%) | ABSOLUTE
+    output_qty     DECIMAL(18, 6) NOT NULL,                      -- cỡ mẻ chuẩn (theo output_uom)
+    output_uom     VARCHAR(20)    NOT NULL,                      -- nên trùng items.base_uom (validate app)
+    effective_from TIMESTAMPTZ(3),
+    effective_to   TIMESTAMPTZ(3),
+    notes          TEXT,
+    deleted_at     TIMESTAMPTZ(3),
+    created_at     TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_boms PRIMARY KEY (id),
+    CONSTRAINT chk_boms_type      CHECK (bom_type  IN ('FORMULA', 'PACKING')),
+    CONSTRAINT chk_boms_status    CHECK (status    IN ('DRAFT', 'ACTIVE', 'OBSOLETE')),
+    CONSTRAINT chk_boms_qty_basis CHECK (qty_basis IN ('PERCENT', 'ABSOLUTE')),
+    CONSTRAINT chk_boms_out_qty   CHECK (output_qty > 0),
+    CONSTRAINT chk_boms_effective CHECK (effective_to IS NULL OR effective_from IS NULL OR effective_to > effective_from)
+);
+CREATE UNIQUE INDEX uq_boms_code           ON boms (code) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_boms_item_type_ver  ON boms (output_item_id, bom_type, version_no) WHERE deleted_at IS NULL;
+-- mỗi item OUTPUT chỉ 1 BOM default đang ACTIVE (theo từng loại)
+CREATE UNIQUE INDEX uq_boms_default_active ON boms (output_item_id, bom_type)
+    WHERE (is_default IS TRUE AND status = 'ACTIVE' AND deleted_at IS NULL);
+CREATE INDEX idx_boms_output_item ON boms (output_item_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS bom_lines
+(
+    id                UUID           NOT NULL DEFAULT uuidv7(),
+    bom_id            UUID           NOT NULL,
+    component_item_id UUID           NOT NULL,
+    line_no           INTEGER        NOT NULL DEFAULT 1,
+    line_type         VARCHAR(20)    NOT NULL DEFAULT 'ITEM',    -- ITEM | PHANTOM
+    quantity          DECIMAL(18, 6) NOT NULL,                  -- theo base_uom component (đã quy đổi)
+    input_uom         VARCHAR(100),                             -- (tùy chọn) đơn vị nhập liệu công thức — chỉ hiển thị
+    input_qty         DECIMAL(18, 6),                           -- (tùy chọn) — KHÔNG dùng để tính
+    scrap_pct         DECIMAL(7, 4)  NOT NULL DEFAULT 0,         -- hao hụt: consume = quantity*(1+scrap_pct/100)
+    is_gift           BOOLEAN        NOT NULL DEFAULT FALSE,     -- quà tặng kèm (chỉ có nghĩa khi bom_type=PACKING)
+    notes             TEXT,
+    deleted_at        TIMESTAMPTZ(3),
+    created_at        TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ(3) NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_bom_lines PRIMARY KEY (id),
+    CONSTRAINT chk_bom_lines_type      CHECK (line_type IN ('ITEM', 'PHANTOM')),
+    CONSTRAINT chk_bom_lines_qty       CHECK (quantity > 0),
+    CONSTRAINT chk_bom_lines_input_qty CHECK (input_qty IS NULL OR input_qty > 0),
+    CONSTRAINT chk_bom_lines_scrap     CHECK (scrap_pct >= 0 AND scrap_pct < 100)
+);
+CREATE UNIQUE INDEX uq_bom_lines_line_no    ON bom_lines (bom_id, line_no)           WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_bom_lines_component  ON bom_lines (bom_id, component_item_id) WHERE deleted_at IS NULL;
+CREATE INDEX        idx_bom_lines_component ON bom_lines (component_item_id)         WHERE deleted_at IS NULL;
+CREATE INDEX        idx_bom_lines_bom       ON bom_lines (bom_id)                    WHERE deleted_at IS NULL;
 
 
 
@@ -432,4 +526,17 @@ ALTER TABLE vendor_items
  --- AddForeignKey item_uom_conversions table
 ALTER TABLE item_uom_conversions
     ADD CONSTRAINT fk_item_uom_conversions_item FOREIGN KEY (item_id)
+        REFERENCES items (id) ON DELETE RESTRICT;
+
+--- AddForeignKey boms table
+ALTER TABLE boms
+    ADD CONSTRAINT fk_boms_output_item FOREIGN KEY (output_item_id)
+        REFERENCES items (id) ON DELETE RESTRICT;
+
+--- AddForeignKey bom_lines table
+ALTER TABLE bom_lines
+    ADD CONSTRAINT fk_bom_lines_bom FOREIGN KEY (bom_id)
+        REFERENCES boms (id) ON DELETE RESTRICT;
+ALTER TABLE bom_lines
+    ADD CONSTRAINT fk_bom_lines_component FOREIGN KEY (component_item_id)
         REFERENCES items (id) ON DELETE RESTRICT;
