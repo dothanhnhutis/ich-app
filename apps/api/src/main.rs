@@ -7,6 +7,7 @@ use application::services::bin_service::BinService;
 use application::services::location_service::LocationService;
 use application::services::role_service::RoleService;
 use application::services::user_service::UserService;
+use application::services::vendor_service::VendorService;
 use application::services::zone_service::ZoneService;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderValue, Method};
@@ -17,7 +18,7 @@ use infrastructure::{
     RabbitEmailPublisher, RedisSessionCache, init_db_pool, init_redis,
     repositories::{
         PgBinRepository, PgLocationRepository, PgPasswordTokenRepository, PgRoleRepository,
-        PgUserRepository, PgUserSessionRepository, PgZoneRepository,
+        PgUserRepository, PgUserSessionRepository, PgVendorRepository, PgZoneRepository,
     },
 };
 use shared::config::AppConfig;
@@ -49,6 +50,7 @@ pub struct AppState {
     pub location_service: Arc<LocationService<PgLocationRepository>>,
     pub zone_service: Arc<ZoneService<PgZoneRepository, PgLocationRepository>>,
     pub bin_service: Arc<BinService<PgBinRepository, PgZoneRepository>>,
+    pub vendor_service: Arc<VendorService<PgVendorRepository>>,
     pub cookie_secure: bool,
     pub cookie_domain: Option<String>,
 }
@@ -88,6 +90,7 @@ async fn main() {
     let location_repo = PgLocationRepository::new(pool.clone());
     let zone_repo = PgZoneRepository::new(pool.clone());
     let bin_repo = PgBinRepository::new(pool.clone());
+    let vendor_repo = PgVendorRepository::new(pool.clone());
 
     let auth_service = Arc::new(AuthService::new(
         user_repo.clone(),
@@ -116,6 +119,7 @@ async fn main() {
     let location_service = Arc::new(LocationService::new(location_repo.clone()));
     let zone_service = Arc::new(ZoneService::new(zone_repo.clone(), location_repo));
     let bin_service = Arc::new(BinService::new(bin_repo, zone_repo));
+    let vendor_service = Arc::new(VendorService::new(vendor_repo));
 
     let state = AppState {
         auth_service,
@@ -125,6 +129,7 @@ async fn main() {
         location_service,
         zone_service,
         bin_service,
+        vendor_service,
         cookie_secure: config.cookie_secure,
         cookie_domain: config.cookie_domain,
     };

@@ -220,3 +220,43 @@ pub async fn require_bin_delete(
     ensure(&state, auth.user.id, "BIN_DELETE").await?;
     Ok(next.run(req).await)
 }
+
+pub async fn require_vendor_view(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    ensure(&state, auth.user.id, "VENDOR_VIEW").await?;
+    Ok(next.run(req).await)
+}
+
+pub async fn require_vendor_create(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    ensure(&state, auth.user.id, "VENDOR_CREATE").await?;
+    Ok(next.run(req).await)
+}
+
+pub async fn require_vendor_update(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    ensure(&state, auth.user.id, "VENDOR_UPDATE").await?;
+    Ok(next.run(req).await)
+}
+
+pub async fn require_vendor_delete(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    ensure(&state, auth.user.id, "VENDOR_DELETE").await?;
+    Ok(next.run(req).await)
+}

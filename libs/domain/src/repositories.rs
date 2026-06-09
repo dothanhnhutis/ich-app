@@ -4,8 +4,8 @@ use uuid::Uuid;
 use crate::entities::{
     Bin, BinFilter, BinUpdate, Location, LocationFilter, LocationUpdate, NewBin, NewLocation,
     NewPasswordToken, NewRole, NewSession, NewUser, NewZone, PasswordToken, PasswordTokenType,
-    Permission, Role, RoleFilter, RoleUpdate, Session, User, UserFilter, UserUpdate, Zone,
-    ZoneFilter, ZoneUpdate,
+    Permission, Role, RoleFilter, RoleUpdate, Session, User, UserFilter, UserUpdate, Vendor,
+    VendorFilter, VendorUpdate, NewVendor, Zone, ZoneFilter, ZoneUpdate,
 };
 use crate::errors::DomainError;
 
@@ -213,6 +213,36 @@ pub trait BinRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<Bin>, DomainError>> + Send;
 
     /// Xoá mềm (set deleted_at). NotFound nếu bin không tồn tại / đã xoá.
+    fn soft_delete(&self, id: Uuid) -> impl Future<Output = Result<(), DomainError>> + Send;
+}
+
+pub trait VendorRepository: Send + Sync {
+    /// Tạo nhà cung cấp mới.
+    fn create(
+        &self,
+        new_vendor: NewVendor,
+    ) -> impl Future<Output = Result<Vendor, DomainError>> + Send;
+
+    /// Tìm nhà cung cấp theo id (chỉ vendor chưa xoá mềm).
+    fn find_by_id(
+        &self,
+        id: Uuid,
+    ) -> impl Future<Output = Result<Option<Vendor>, DomainError>> + Send;
+
+    /// Danh sách nhà cung cấp (lọc + phân trang + sắp xếp); trả về (items, tổng số khớp).
+    fn list(
+        &self,
+        filter: VendorFilter,
+    ) -> impl Future<Output = Result<(Vec<Vendor>, i64), DomainError>> + Send;
+
+    /// Cập nhật một phần; None nếu vendor không tồn tại / đã xoá mềm.
+    fn update(
+        &self,
+        id: Uuid,
+        changes: VendorUpdate,
+    ) -> impl Future<Output = Result<Option<Vendor>, DomainError>> + Send;
+
+    /// Xoá mềm (set deleted_at). NotFound nếu vendor không tồn tại / đã xoá.
     fn soft_delete(&self, id: Uuid) -> impl Future<Output = Result<(), DomainError>> + Send;
 }
 

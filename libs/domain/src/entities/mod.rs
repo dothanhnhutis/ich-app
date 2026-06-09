@@ -6,6 +6,7 @@ mod permission;
 mod role;
 mod session;
 mod user;
+mod vendor;
 mod zone;
 
 pub use bin::*;
@@ -16,4 +17,5 @@ pub use permission::*;
 pub use role::*;
 pub use session::*;
 pub use user::*;
+pub use vendor::*;
 pub use zone::*;

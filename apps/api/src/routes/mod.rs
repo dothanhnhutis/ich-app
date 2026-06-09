@@ -4,6 +4,7 @@ mod location_route;
 mod permission_route;
 mod role_route;
 mod user_route;
+mod vendor_route;
 mod zone_route;
 
 use axum::{Router, extract::FromRef, middleware::from_fn_with_state};
@@ -25,6 +26,7 @@ where
         .merge(location_route::routes::<S>(state.clone()))
         .merge(zone_route::routes::<S>(state.clone()))
         .merge(bin_route::routes::<S>(state.clone()))
+        .merge(vendor_route::routes::<S>(state.clone()))
         // route_layer: middleware chỉ chạy trên các route protected đã khai báo ở trên.
         .route_layer(from_fn_with_state(state, require_auth));
 
