@@ -3,7 +3,7 @@ import {
   ThemeProviderContext,
   type Theme,
   type ThemeProviderProps,
-} from "./theme-context";
+} from "../contexts/theme-context";
 
 export function ThemeProvider({
   children,
@@ -18,19 +18,25 @@ export function ThemeProvider({
   useEffect(() => {
     const root = window.document.documentElement;
 
-    root.classList.remove("light", "dark");
+    const apply = () => {
+      root.classList.remove("light", "dark");
+      if (theme === "system") {
+        const isDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        root.classList.add(isDark ? "dark" : "light");
+      } else {
+        root.classList.add(theme);
+      }
+    };
+
+    apply();
 
     if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
-
-      root.classList.add(systemTheme);
-      return;
+      const mql = window.matchMedia("(prefers-color-scheme: dark)");
+      mql.addEventListener("change", apply);
+      return () => mql.removeEventListener("change", apply);
     }
-
-    root.classList.add(theme);
   }, [theme]);
 
   const value = {
