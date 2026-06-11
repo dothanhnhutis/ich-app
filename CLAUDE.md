@@ -1,7 +1,7 @@
 # ich-app — Context dự án (handoff)
 
 > File này Claude Code **tự nạp mỗi phiên**. Mục tiêu: tiếp tục dự án trên bất kỳ máy nào.
-> Cập nhật lần cuối: 2026-06-10 (sau khi xong **CRUD item master + BOM/bom_lines**; trước đó: vendor, warehouse location/zone/bin).
+> Cập nhật lần cuối: 2026-06-11 (thêm **frontend admin scaffolding** — apps/admin; trước đó: CRUD item master + BOM/bom_lines, vendor, warehouse).
 
 ## 1. Tổng quan
 App Rust theo kiến trúc **clean/hexagonal** — RBAC auth + quản lý kho (warehouse) + nhà cung cấp (vendor) + **item master/BOM** (sản xuất mỹ phẩm). Giao tiếp tiếng Việt; message lỗi trả về tiếng Việt.
@@ -133,3 +133,10 @@ GET list: `/vendors?code=&name=&vendor_type=&sort=code:asc,created_at:desc&page=
 - **API**: `apps/api/src/{main.rs, errors.rs, extractor.rs}`, `middlewares/{auth.rs, authz.rs}`, `handlers/*_handler.rs`, `routes/*_route.rs`.
 - **DB chưa có code .rs**: `item_uom_conversions` (trong `001_init.sql`) — CRUD để follow-up.
 - **Shared/DB**: `libs/shared/src/config.rs`, `migrations/00{1..5}_*.sql`, `data/*.csv`, `docker-compose.dev.yaml`.
+- **Frontend**: `apps/admin/src/{main.tsx, App.tsx, routes/*, components/ui/*, components/ThemeProvider.tsx, hooks/use-theme.ts, contexts/theme-context.ts, lib/utils.ts}` (xem mục 12).
+
+## 12. Frontend admin (apps/admin) — WIP UI
+SPA quản trị, **tách hẳn** backend Rust. Stack: **React 19 + Vite 8 + TanStack Router** (file-based; `routeTree.gen.ts` do `@tanstack/router-plugin` tự sinh) + **TanStack React Form** + **Zod** + **Tailwind v4** (`@tailwindcss/vite`) + **shadcn/ui** (`@base-ui/react`, style base-luma) + lucide-react + React Compiler. Quản lý gói: **pnpm**.
+- Cấu trúc: `src/routes/{__root,index,login}.tsx` (route), `components/ui/{button,field,input,label,separator}.tsx` (shadcn), `ThemeProvider` + `hooks/use-theme.ts` + `contexts/theme-context.ts` (dark/light), `lib/utils.ts` (`cn`), `assets/*`, `index.css` (tailwind). `App.tsx` = RouterProvider + ThemeProvider.
+- Chạy: `cd apps/admin && pnpm install && pnpm dev` (Vite). Build: `pnpm build` (`tsc -b && vite build`); lint `pnpm lint`. `.tanstack/` đã gitignore.
+- Trạng thái: **scaffolding UI** — `/login` (form email/mật khẩu + zod, nút GitHub placeholder) **CHƯA gọi API backend**; `/` là stub "Welcome Home". Khi nối API: backend mở origin qua `CORS_ALLOWED_ORIGINS` + cookie phiên (`COOKIE_*`).
