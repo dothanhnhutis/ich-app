@@ -1,5 +1,7 @@
 pub mod auth_dto;
 pub mod bin_dto;
+pub mod bom_dto;
+pub mod item_dto;
 pub mod location_dto;
 pub mod pagination;
 pub mod permission_dto;

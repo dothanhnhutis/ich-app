@@ -296,7 +296,7 @@ CREATE TABLE IF NOT EXISTS items
     has_bom           BOOLEAN        NOT NULL DEFAULT FALSE, -- tự sản xuất (có BOM)
     is_lot_controlled BOOLEAN        NOT NULL DEFAULT TRUE,  -- bắt buộc gắn lô/HSD
     is_phantom        BOOLEAN        NOT NULL DEFAULT FALSE, -- BTP ảo: nổ thẳng component khi explode BOM
-    density_g_ml      DECIMAL(10, 6),          -- khối lượng riêng (quy đổi kg<->L); NULL cho item rắn/pcs
+    density_g_ml      DOUBLE PRECISION,        -- khối lượng riêng (quy đổi kg<->L); NULL cho item rắn/pcs
     shelf_life_days   INTEGER,                 -- HSD mặc định (suy ra expiration_date khi thiếu)
     pao_months        SMALLINT,                -- Period After Opening (thành phẩm)
     inci_name         VARCHAR(255),            -- nhãn thành phần (nguyên liệu)
@@ -368,7 +368,7 @@ CREATE TABLE IF NOT EXISTS boms
     status         VARCHAR(20)    NOT NULL DEFAULT 'DRAFT',      -- DRAFT | ACTIVE | OBSOLETE
     is_default     BOOLEAN        NOT NULL DEFAULT FALSE,
     qty_basis      VARCHAR(20)    NOT NULL DEFAULT 'ABSOLUTE',   -- PERCENT (FORMULA ~100%) | ABSOLUTE
-    output_qty     DECIMAL(18, 6) NOT NULL,                      -- cỡ mẻ chuẩn (theo output_uom)
+    output_qty     DOUBLE PRECISION NOT NULL,                    -- cỡ mẻ chuẩn (theo output_uom)
     output_uom     VARCHAR(20)    NOT NULL,                      -- nên trùng items.base_uom (validate app)
     effective_from TIMESTAMPTZ(3),
     effective_to   TIMESTAMPTZ(3),
@@ -397,10 +397,10 @@ CREATE TABLE IF NOT EXISTS bom_lines
     component_item_id UUID           NOT NULL,
     line_no           INTEGER        NOT NULL DEFAULT 1,
     line_type         VARCHAR(20)    NOT NULL DEFAULT 'ITEM',    -- ITEM | PHANTOM
-    quantity          DECIMAL(18, 6) NOT NULL,                  -- theo base_uom component (đã quy đổi)
+    quantity          DOUBLE PRECISION NOT NULL,                -- theo base_uom component (đã quy đổi)
     input_uom         VARCHAR(100),                             -- (tùy chọn) đơn vị nhập liệu công thức — chỉ hiển thị
-    input_qty         DECIMAL(18, 6),                           -- (tùy chọn) — KHÔNG dùng để tính
-    scrap_pct         DECIMAL(7, 4)  NOT NULL DEFAULT 0,         -- hao hụt: consume = quantity*(1+scrap_pct/100)
+    input_qty         DOUBLE PRECISION,                         -- (tùy chọn) — KHÔNG dùng để tính
+    scrap_pct         DOUBLE PRECISION NOT NULL DEFAULT 0,       -- hao hụt: consume = quantity*(1+scrap_pct/100)
     is_gift           BOOLEAN        NOT NULL DEFAULT FALSE,     -- quà tặng kèm (chỉ có nghĩa khi bom_type=PACKING)
     notes             TEXT,
     deleted_at        TIMESTAMPTZ(3),

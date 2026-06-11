@@ -1,5 +1,7 @@
 pub mod auth_handler;
 pub mod bin_handler;
+pub mod bom_handler;
+pub mod item_handler;
 pub mod location_handler;
 pub mod permission_handler;
 pub mod role_handler;

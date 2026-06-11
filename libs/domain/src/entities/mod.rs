@@ -1,5 +1,7 @@
 mod bin;
+mod bom;
 mod cached_session;
+mod item;
 mod location;
 mod password_token;
 mod permission;
@@ -10,7 +12,9 @@ mod vendor;
 mod zone;
 
 pub use bin::*;
+pub use bom::*;
 pub use cached_session::*;
+pub use item::*;
 pub use location::*;
 pub use password_token::*;
 pub use permission::*;

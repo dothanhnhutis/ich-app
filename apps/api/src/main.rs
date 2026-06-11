@@ -4,6 +4,8 @@ use std::sync::Arc;
 use application::services::account_service::AccountService;
 use application::services::auth_service::AuthService;
 use application::services::bin_service::BinService;
+use application::services::bom_service::BomService;
+use application::services::item_service::ItemService;
 use application::services::location_service::LocationService;
 use application::services::role_service::RoleService;
 use application::services::user_service::UserService;
@@ -17,8 +19,9 @@ use dotenvy::dotenv;
 use infrastructure::{
     RabbitEmailPublisher, RedisSessionCache, init_db_pool, init_redis,
     repositories::{
-        PgBinRepository, PgLocationRepository, PgPasswordTokenRepository, PgRoleRepository,
-        PgUserRepository, PgUserSessionRepository, PgVendorRepository, PgZoneRepository,
+        PgBinRepository, PgBomRepository, PgItemRepository, PgLocationRepository,
+        PgPasswordTokenRepository, PgRoleRepository, PgUserRepository, PgUserSessionRepository,
+        PgVendorRepository, PgZoneRepository,
     },
 };
 use shared::config::AppConfig;
@@ -51,6 +54,8 @@ pub struct AppState {
     pub zone_service: Arc<ZoneService<PgZoneRepository, PgLocationRepository>>,
     pub bin_service: Arc<BinService<PgBinRepository, PgZoneRepository>>,
     pub vendor_service: Arc<VendorService<PgVendorRepository>>,
+    pub item_service: Arc<ItemService<PgItemRepository>>,
+    pub bom_service: Arc<BomService<PgBomRepository, PgItemRepository>>,
     pub cookie_secure: bool,
     pub cookie_domain: Option<String>,
 }
@@ -91,6 +96,8 @@ async fn main() {
     let zone_repo = PgZoneRepository::new(pool.clone());
     let bin_repo = PgBinRepository::new(pool.clone());
     let vendor_repo = PgVendorRepository::new(pool.clone());
+    let item_repo = PgItemRepository::new(pool.clone());
+    let bom_repo = PgBomRepository::new(pool.clone());
 
     let auth_service = Arc::new(AuthService::new(
         user_repo.clone(),
@@ -120,6 +127,8 @@ async fn main() {
     let zone_service = Arc::new(ZoneService::new(zone_repo.clone(), location_repo));
     let bin_service = Arc::new(BinService::new(bin_repo, zone_repo));
     let vendor_service = Arc::new(VendorService::new(vendor_repo));
+    let item_service = Arc::new(ItemService::new(item_repo.clone()));
+    let bom_service = Arc::new(BomService::new(bom_repo, item_repo));
 
     let state = AppState {
         auth_service,
@@ -130,6 +139,8 @@ async fn main() {
         zone_service,
         bin_service,
         vendor_service,
+        item_service,
+        bom_service,
         cookie_secure: config.cookie_secure,
         cookie_domain: config.cookie_domain,
     };

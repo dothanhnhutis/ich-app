@@ -1,5 +1,7 @@
 mod auth_route;
 mod bin_route;
+mod bom_route;
+mod item_route;
 mod location_route;
 mod permission_route;
 mod role_route;
@@ -27,6 +29,8 @@ where
         .merge(zone_route::routes::<S>(state.clone()))
         .merge(bin_route::routes::<S>(state.clone()))
         .merge(vendor_route::routes::<S>(state.clone()))
+        .merge(item_route::routes::<S>(state.clone()))
+        .merge(bom_route::routes::<S>(state.clone()))
         // route_layer: middleware chỉ chạy trên các route protected đã khai báo ở trên.
         .route_layer(from_fn_with_state(state, require_auth));
 

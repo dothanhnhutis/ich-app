@@ -1,4 +1,6 @@
 mod pg_bin_repository;
+mod pg_bom_repository;
+mod pg_item_repository;
 mod pg_location_repository;
 mod pg_password_token_repository;
 mod pg_role_repository;
@@ -8,6 +10,8 @@ mod pg_vendor_repository;
 mod pg_zone_repository;
 
 pub use pg_bin_repository::PgBinRepository;
+pub use pg_bom_repository::PgBomRepository;
+pub use pg_item_repository::PgItemRepository;
 pub use pg_location_repository::PgLocationRepository;
 pub use pg_password_token_repository::PgPasswordTokenRepository;
 pub use pg_role_repository::PgRoleRepository;
