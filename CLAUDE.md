@@ -1,7 +1,7 @@
 # ich-app — Context dự án (handoff)
 
 > File này Claude Code **tự nạp mỗi phiên**. Mục tiêu: tiếp tục dự án trên bất kỳ máy nào.
-> Cập nhật lần cuối: 2026-06-10 (sau khi xong **CRUD vendor** + **schema item master/BOM**; trước đó: CRUD warehouse location/zone/bin).
+> Cập nhật lần cuối: 2026-06-10 (sau khi xong **CRUD item master + BOM/bom_lines**; trước đó: vendor, warehouse location/zone/bin).
 
 ## 1. Tổng quan
 App Rust theo kiến trúc **clean/hexagonal** — RBAC auth + quản lý kho (warehouse) + nhà cung cấp (vendor) + **item master/BOM** (sản xuất mỹ phẩm). Giao tiếp tiếng Việt; message lỗi trả về tiếng Việt.
@@ -49,11 +49,12 @@ Smoke test routing (không cần login): GET `/api/v1/<resource>` chưa auth →
 
 ## 6. RBAC
 - Middleware `apps/api/src/middlewares/authz.rs`: `require_<RESOURCE>_<ACTION>` → `ensure(state, user_id, "CODE")` nạp permission **mỗi request** (không cache authz).
-- Permission code dạng `RESOURCE_ACTION` (vd `LOCATION_VIEW`, `ZONE_CREATE`, `VENDOR_UPDATE`, `USER_DELETE`). Danh mục đầy đủ ở `data/permissions.csv`. ⚠️ Đã **đổi tên** `CHEMICAL_*` → `RAW_MATERIAL_*` (giữ NGUYÊN UUID — `role_permissions.csv` tham chiếu theo id nên không sửa). `VENDOR_*` đã có + gán super-admin. **Chưa có** permission cho item/BOM (sẽ thêm `ITEM_*`/`BOM_*` khi viết CRUD).
+- Permission code dạng `RESOURCE_ACTION` (vd `LOCATION_VIEW`, `ZONE_CREATE`, `VENDOR_UPDATE`, `BOM_CREATE`). Danh mục đầy đủ ở `data/permissions.csv`. ⚠️ `CHEMICAL_*` đã đổi → `RAW_MATERIAL_*` (giữ UUID).
+- ⚠️ **Item authz = PER-TYPE** (5 bộ: `RAW_MATERIAL_*`, `PACKAGING_*`, `UTILITY_*`, `SEMI_FINISHED_*`, `FINISHED_GOODS_*` — 20 quyền). Vì `type` nằm trong body (create) / trong row (update/delete) → **KHÔNG** dùng được route-middleware tĩnh → kiểm ở **TẦNG SERVICE**: handler `/items` nạp `user_service.permission_codes(user_id)` rồi truyền `&[String]` vào `ItemService` (mỗi method tự đòi `{TYPE}_{ACTION}`). **BOM** dùng 1 bộ `BOM_*` qua middleware chuẩn `require_bom_*`. Tất cả 24 quyền (20 + 4 BOM) đã gán super-admin.
 - Super-admin role id `019c0cd2-374b-795a-a028-460024d912b7`. User test có đủ quyền: `gaconght@gmail.com` (**mật khẩu chưa biết** — cần để test luồng đăng nhập).
 
 ## 7. Module nghiệp vụ
-Trạng thái: **Warehouse (location/zone/bin)** ✅ CRUD · **Vendor** ✅ CRUD · **Item Master + BOM** 🟡 SCHEMA xong, **Rust CRUD CHƯA**.
+Trạng thái: **Warehouse (location/zone/bin)** ✅ CRUD · **Vendor** ✅ CRUD · **Item Master** ✅ CRUD (authz per-type) · **BOM + bom_lines** ✅ CRUD (Hybrid).
 
 ### 7.1 Warehouse — CRUD location/zone/bin ✅
 Phân cấp: **location** (kho) → **zone** (`warehouse_zones`, khu vực) → **bin** (`storage_bins`, kệ). FK `ON DELETE RESTRICT`.
@@ -84,22 +85,29 @@ Resource phẳng (không phân cấp), theo đúng "công thức" mục 2. Enum 
 
 GET list: `/vendors?code=&name=&vendor_type=&sort=code:asc,created_at:desc&page=1&page_size=20`.
 
-### 7.3 Item Master + BOM — SCHEMA xong 🟡 (Rust CRUD CHƯA)
-**Chỉ mới có schema** (`migrations/001_init.sql`) — **chưa có** entity/repo/service/handler/route Rust, chưa có permission `ITEM_*`/`BOM_*`. `items` là master **dùng chung** (nguyên liệu thô, bao bì cấp 1/2/3 + thùng, dụng cụ/quà tặng kèm, bán thành phẩm chờ chiết rót, thành phẩm); 1 item có **0, 1 hoặc nhiều** BOM.
+### 7.3 Item Master ✅ + BOM/bom_lines ✅ (Hybrid)
+`items` là master **dùng chung** (nguyên liệu thô, bao bì cấp 1/2/3 + thùng, dụng cụ/quà tặng, bán thành phẩm, thành phẩm); 1 item có **0, 1 hoặc nhiều** BOM. CRUD đầy đủ theo công thức mục 2.
 
-- **`items`**: `type` 5 giá trị (`RAW_MATERIAL|PACKAGING|UTILITY|SEMI_FINISHED|FINISHED_GOODS`); `base_uom`; `packaging_level` (PRIMARY/SECONDARY/TERTIARY/CARTON — **chỉ** khi `type=PACKAGING`, CHECK ép NOT NULL); flags `is_purchasable/is_sellable/has_bom/is_lot_controlled/is_phantom`; `density_g_ml`, `shelf_life_days`, `pao_months`, `inci_name`, `cas_number`. `uq_items_sku` **partial**; `chk_items_phantom` (phantom ⇒ has_bom).
-- **`boms`**: `output_item_id`→items; `bom_type` FORMULA|PACKING; `version_no`; `status` DRAFT|ACTIVE|OBSOLETE; `is_default`; `qty_basis` PERCENT|ABSOLUTE; `output_qty/output_uom`; `effective_from/to`. **`uq_boms_default_active`** ép **1 BOM default ACTIVE / item / loại**.
-- **`bom_lines`**: `bom_id`→boms, `component_item_id`→items; `line_type` ITEM|PHANTOM; `quantity` (theo base_uom component); `scrap_pct` (0..<100); `is_gift` (quà tặng, chỉ có nghĩa khi PACKING); `input_uom/input_qty` (chỉ hiển thị). Đa cấp tự nhiên qua cây bom_lines. FK đều **RESTRICT**.
-- **HỢP ĐỒNG enforcement khi viết CRUD (app-level — quyết định: KHÔNG trigger nghiệp vụ; chỉ giữ audit/updated_at là hạ tầng):**
-  - **Cycle BOM**: recursive check component không chứa (trực/gián tiếp) output_item; cấm self-ref; chỉ cho tạo BOM khi item `type ∈ {SEMI_FINISHED, FINISHED_GOODS}`; chặn đổi `boms.output_item_id` khi đã có lines.
-  - **Guard xoá mềm**: chặn xoá item còn được ref active (`bom_lines.component`, `boms.output`, `vendor_items`, `item_uom_conversions`); chặn xoá bom còn `bom_lines`.
-  - **Lock `base_uom`**: chặn đổi `items.base_uom` khi đã có `inventory_transactions` (khi bảng tồn tại).
+| Method | Path | Quyền |
+|---|---|---|
+| POST / GET | `/api/v1/items` | `{TYPE}_CREATE` / `{TYPE}_VIEW` (per-type, ở service) |
+| GET / PATCH / DELETE | `/api/v1/items/{id}` | `{TYPE}_VIEW` / `{TYPE}_UPDATE` / `{TYPE}_DELETE` |
+| POST / GET | `/api/v1/boms` | BOM_CREATE / BOM_VIEW |
+| GET / PATCH / DELETE | `/api/v1/boms/{id}` | BOM_VIEW / BOM_UPDATE / BOM_DELETE |
+| POST | `/api/v1/boms/{id}/lines` | BOM_UPDATE |
+| PATCH / DELETE | `/api/v1/boms/{id}/lines/{line_id}` | BOM_UPDATE |
+
+- **items** (`ItemService<IR>`, **không** route_layer — authz per-type ở service): field Rust `item_type` ↔ cột `type` (`#[sqlx(rename="type")]` + `#[serde(rename="type")]`); `packaging_level` (chỉ PACKAGING); 5 flags (`is_lot_controlled` default TRUE qua `#[serde(default=...)]`); `density_g_ml/shelf_life_days/pao_months/inci_name/cas_number`. **`type` & `base_uom` BỊ KHOÁ** (immutable — không có ở `UpdateItemRequest`). GET list chỉ trả các loại có `{TYPE}_VIEW`. DELETE chặn nếu `is_referenced` (boms.output / bom_lines.component / item_uom_conversions / vendor_items).
+- **BOM Hybrid** (`BomService<BR,IR>`): `POST /boms` mang `lines:[...]` → header+lines trong **1 transaction** (`create_with_lines`); `GET /boms/{id}` trả `{bom, lines}` nested; thêm/sửa/xoá từng line qua sub-route. `DELETE /boms` **cascade** xoá mềm lines (transaction). `output_item_id`/`bom_type` khoá; `component_item_id` của line khoá.
+- **Enforcement app-level (đã làm, KHÔNG trigger):** output item phải `type ∈ {SEMI_FINISHED,FINISHED_GOODS}`; component phải tồn tại; cấm self-ref; **cycle đệ quy** qua recursive CTE `would_create_cycle(component, output)` (verify transitive trên DB thật); `uq_boms_default_active` ép 1 BOM default-ACTIVE/item/loại. Lock `base_uom` (khi có `inventory_transactions`) = follow-up.
+- ⚠️ Cột số (`density_g_ml`, `output_qty`, `quantity`, `scrap_pct`, `input_qty`) đã đổi **DECIMAL → DOUBLE PRECISION** trong `001_init.sql` (khớp `f64` toàn app + cột zone; sqlx **chưa bật** decimal). Đổi sang exact-decimal sau = phải bật feature + đổi DTO sang `Decimal`.
 
 ## 8. Đã verify / CHƯA verify
-- ✅ `cargo check --workspace` + `cargo clippy --all-targets` sạch (gồm cả vendor); server boot không panic (route merge OK); routing 401 (chưa auth) / 404 (path lạ).
-- ✅ **Schema item master/BOM** đã verify trên DB throwaway (PG18 + pg_partman, **fresh volume**): migration 001→003 chạy sạch; `boms`/`bom_lines` được `002` cấp đủ trigger audit + updated_at; `uq_items_sku` partial đúng; các CHECK/unique chặn đúng (type cũ `CHEMICAL`, phantom-không-bom, BOM default-ACTIVE thứ 2, PACKAGING thiếu `packaging_level`); item hợp lệ persist + ghi `audit_logs`.
-- ❌ **CHƯA áp schema item/BOM lên DB local đang dùng** (volume cũ — xem Live-apply ở mục 4); **CHƯA có Rust CRUD** cho item/BOM.
-- ❌ **CHƯA test luồng CÓ ĐĂNG NHẬP** (tạo location→zone→bin/vendor, thử xoá cha bị chặn, trùng mã/tên, đổi cha, 403 khi thiếu quyền). Cần mật khẩu `gaconght@gmail.com` hoặc tạo session test tạm rồi xoá.
+- ✅ `cargo check --workspace` + `cargo clippy --all-targets` sạch (gồm items + boms/bom_lines).
+- ✅ **SQL item/BOM verify trên DB throwaway thật** (PG18, áp `001_init`): cycle CTE đúng kể cả **transitive** (M→O→C); `is_referenced` đúng (component/output/uom/vendor); `type = ANY()` lọc per-type; đọc `f64` + cột `type` OK; CHECK `chk_items_pkg_level` + unique `uq_bom_lines_component` chặn đúng (tên constraint **khớp** `map_sqlx_err`). Schema (gồm DECIMAL→DOUBLE) áp sạch.
+- ✅ (Đợt trước) schema fresh-volume + pg_partman: 001→003 sạch, `002` cấp trigger audit/updated_at cho boms/bom_lines.
+- ❌ **CHƯA test luồng CÓ ĐĂNG NHẬP qua HTTP** (login → POST `/items` per-type → POST `/boms` kèm lines → thử cycle/guard/trùng/403/404). Cần mật khẩu `gaconght@gmail.com` hoặc session test tạm.
+- ❌ **CHƯA áp lên DB local đang dùng** (volume cũ — Live-apply mục 4; nay gồm **20 permission mới** + **5 cột DOUBLE**).
 
 ## 9. Gotchas / quy ước
 - Entity **bỏ field `deleted_at`** (chỉ lọc SQL; `*_COLS`/RETURNING liệt kê đúng cột).
@@ -107,19 +115,21 @@ GET list: `/vendors?code=&name=&vendor_type=&sort=code:asc,created_at:desc&page=
 - axum 0.8: route tĩnh (`/users/me`) và động (`/users/{id}`) cùng tồn tại OK; `/x/{id}` ở nhiều nhóm method (view/update/delete) merge OK.
 - Lỗi "còn con" trả `AppError::Validation` (HTTP **400**) — codebase **chưa có 409 Conflict**.
 - `cargo run` cần `SERVER_PORT` (không có default → panic nếu thiếu).
+- **Item per-type authz ở TẦNG SERVICE** (không route-middleware): handler nạp `permission_codes` → truyền `&[String]` vào `ItemService`; BOM thì middleware chuẩn. Resource mới mà quyền phụ thuộc DỮ LIỆU (vd theo `type`) → theo mẫu item này.
+- Cột số item/bom = **DOUBLE PRECISION** + `f64` (sqlx chưa bật decimal; giống cột zone). ĐỪNG dùng DECIMAL với bind `f64`.
+- Immutable (không có ở Update DTO): item `type`/`base_uom`; bom `output_item_id`/`bom_type`; bom_line `component_item_id`.
 - ⚠️ **SQL `col IN (...)` = NULL khi `col IS NULL`** (không phải FALSE) → một CHECK kiểu `(type='PACKAGING' AND col IN (...))` sẽ **PASS** khi `col` NULL. Phải thêm `col IS NOT NULL AND …` (bài học từ `chk_items_pkg_level` — từng hở, đã sửa). Quy tắc: CHECK chỉ FAIL khi biểu thức = FALSE; NULL coi như pass.
 
 ## 10. Việc còn lại (next steps)
-1. **Rust CRUD `items` + `boms`/`bom_lines`** (theo công thức mục 2 + HỢP ĐỒNG enforcement ở 7.3) + permission `ITEM_*`/`BOM_*` (quyết authz: per-type hay chung). **Ưu tiên cao.**
-2. **Áp Live-apply** schema item/BOM lên DB local (mục 4) hoặc rebuild volume; thêm `base_uom` vào `data/items.csv` + bật `COPY items` ở `005_seed.sql` **trước khi** seed item.
-3. **Test e2e có auth** cho warehouse + vendor (phần chưa verify ở mục 8).
-4. Mở rộng: `vendor_items` (mua hàng: vendor_sku/is_preferred/purchase_uom/lead_time/MOQ) + `vendor_item_prices`; `item_lots` (density override + qc_status QUARANTINE/RELEASED/REJECTED + FEFO) → inventory.
-5. Cân nhắc: `AppError::Conflict` (409) cho lỗi "còn con"; PATCH set NULL cột nullable (sentinel/`Option<Option<T>>`); tách `001_init.sql` khi quá lớn.
+1. **Test e2e CÓ ĐĂNG NHẬP (HTTP)** cho item/BOM + warehouse + vendor (mục 8) — login, per-type 403, cycle/guard, trùng mã. **Ưu tiên cao.**
+2. **Áp Live-apply** lên DB local (mục 4) hoặc rebuild volume; thêm `base_uom` vào `data/items.csv` + bật `COPY items` ở `005_seed.sql` **trước khi** seed item.
+3. Mở rộng: `item_uom_conversions` CRUD; `vendor_items` (mua hàng: vendor_sku/is_preferred/purchase_uom/lead_time/MOQ) + `vendor_item_prices`; `item_lots` (density override + qc_status QUARANTINE/RELEASED/REJECTED + FEFO) → inventory; lock `base_uom` thực khi có `inventory_transactions`; cho phép đổi item `type` (kèm re-validate authz/packaging).
+4. Cân nhắc: `AppError::Conflict` (409); PATCH set NULL cột nullable (sentinel/`Option<Option<T>>`); tách `001_init.sql` khi quá lớn.
 
 ## 11. Bản đồ file chính
-- **Domain**: `libs/domain/src/entities/{location,zone,bin,vendor,user,role}.rs`, `repositories.rs` (traits), `errors.rs` (`DomainError`).
-- **Infra**: `libs/infrastructure/src/repositories/pg_{location,zone,bin,vendor,user,role}_repository.rs`.
-- **Application**: `libs/application/src/dto/{location,zone,bin,vendor}_dto.rs`, `services/{location,zone,bin,vendor}_service.rs`, `errors.rs` (`AppError`).
+- **Domain**: `libs/domain/src/entities/{location,zone,bin,vendor,item,bom,user,role}.rs`, `repositories.rs` (traits), `errors.rs` (`DomainError`).
+- **Infra**: `libs/infrastructure/src/repositories/pg_{location,zone,bin,vendor,item,bom,user,role}_repository.rs`.
+- **Application**: `libs/application/src/dto/{location,zone,bin,vendor,item,bom}_dto.rs`, `services/{location,zone,bin,vendor,item,bom}_service.rs`, `errors.rs` (`AppError`).
 - **API**: `apps/api/src/{main.rs, errors.rs, extractor.rs}`, `middlewares/{auth.rs, authz.rs}`, `handlers/*_handler.rs`, `routes/*_route.rs`.
-- **DB item/BOM** (chưa có code .rs): bảng `items`, `item_uom_conversions`, `boms`, `bom_lines` trong `migrations/001_init.sql`.
+- **DB chưa có code .rs**: `item_uom_conversions` (trong `001_init.sql`) — CRUD để follow-up.
 - **Shared/DB**: `libs/shared/src/config.rs`, `migrations/00{1..5}_*.sql`, `data/*.csv`, `docker-compose.dev.yaml`.
