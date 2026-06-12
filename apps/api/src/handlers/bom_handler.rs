@@ -75,7 +75,10 @@ pub async fn update_line(
     Path((bom_id, line_id)): Path<(Uuid, Uuid)>,
     ValidatedJson(payload): ValidatedJson<UpdateBomLineRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let res = state.bom_service.update_line(bom_id, line_id, payload).await?;
+    let res = state
+        .bom_service
+        .update_line(bom_id, line_id, payload)
+        .await?;
     Ok(Json(res))
 }
 
