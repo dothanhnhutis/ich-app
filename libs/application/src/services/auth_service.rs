@@ -148,6 +148,7 @@ where
                     .find_by_id(uid)
                     .await?
                     .ok_or_else(|| AppError::Unauthorized("Người dùng không tồn tại".into()))?;
+
                 (s, u, synced)
             }
         };
