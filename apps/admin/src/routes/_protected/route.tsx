@@ -13,9 +13,14 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_protected")({
+  beforeLoad: ({ context, location }) => {
+    if (!context.auth.profile) {
+      throw redirect({ to: "/login", search: { redirect: location.href } });
+    }
+  },
   component: RouteComponent,
 });
 

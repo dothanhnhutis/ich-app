@@ -1,20 +1,32 @@
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldSeparator,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { createFileRoute } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  redirect,
+  useNavigate,
+  useRouter,
+} from "@tanstack/react-router";
 import logo2 from "../assets/logo2.png";
 import bg from "../assets/bg.jpg";
 import * as z from "zod";
 import { useForm } from "@tanstack/react-form";
+import { useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
+import { ApiError } from "@/lib/api";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect:
+      typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
+  beforeLoad: ({ context, search }) => {
+    // Đã đăng nhập rồi thì không cho vào trang login.
+    if (context.auth.profile) {
+      throw redirect({ to: search.redirect || "/profile" });
+    }
+  },
   component: Login,
 });
 
@@ -27,12 +39,32 @@ const formLoginSchema = z.object({
 });
 
 function LoginForm({ className, ...props }: React.ComponentProps<"form">) {
+  const auth = useAuth();
+  const router = useRouter();
+  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const [formError, setFormError] = useState<string | null>(null);
+
   const form = useForm({
     defaultValues: {
       email: "",
       password: "",
     },
     validators: { onSubmit: formLoginSchema },
+    onSubmit: async ({ value }) => {
+      setFormError(null);
+      try {
+        await auth.login(value.email, value.password);
+        await router.invalidate();
+        await navigate({ to: search.redirect || "/profile" });
+      } catch (err) {
+        setFormError(
+          err instanceof ApiError
+            ? err.message
+            : "Đăng nhập thất bại. Vui lòng thử lại.",
+        );
+      }
+    },
   });
 
   return (
@@ -46,11 +78,19 @@ function LoginForm({ className, ...props }: React.ComponentProps<"form">) {
     >
       <FieldGroup>
         <div className="flex flex-col items-center gap-1 text-center">
-          <h1 className="text-2xl font-bold">Login to your account</h1>
+          <h1 className="text-2xl font-bold">Đăng nhập</h1>
           <p className="text-sm text-balance text-muted-foreground">
-            Enter your email below to login to your account
+            Nhập email và mật khẩu để truy cập vào tài khoản.
           </p>
         </div>
+        {formError && (
+          <p
+            role="alert"
+            className="text-sm text-destructive text-center"
+          >
+            {formError}
+          </p>
+        )}
         <form.Field
           name="email"
           children={(field) => {
@@ -82,12 +122,12 @@ function LoginForm({ className, ...props }: React.ComponentProps<"form">) {
             return (
               <Field>
                 <div className="flex items-center">
-                  <FieldLabel htmlFor={field.name}>Password</FieldLabel>
+                  <FieldLabel htmlFor={field.name}>Mật khẩu</FieldLabel>
                   <a
                     href="#"
                     className="ml-auto text-sm underline-offset-4 hover:underline"
                   >
-                    Forgot your password?
+                    Bạn quên mật khẩu?
                   </a>
                 </div>
                 <Input
@@ -107,9 +147,16 @@ function LoginForm({ className, ...props }: React.ComponentProps<"form">) {
         />
 
         <Field>
-          <Button type="submit">Login</Button>
+          <form.Subscribe
+            selector={(state) => state.isSubmitting}
+            children={(isSubmitting) => (
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Đang đăng nhập..." : "Đăng nhập"}
+              </Button>
+            )}
+          />
         </Field>
-        <FieldSeparator>Or continue with</FieldSeparator>
+        {/* <FieldSeparator>Or continue with</FieldSeparator>
         <Field>
           <Button variant="outline" type="button">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -126,7 +173,7 @@ function LoginForm({ className, ...props }: React.ComponentProps<"form">) {
               Sign up
             </a>
           </FieldDescription>
-        </Field>
+        </Field> */}
       </FieldGroup>
     </form>
   );

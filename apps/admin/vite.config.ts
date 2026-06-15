@@ -22,4 +22,14 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      // Proxy API sang backend axum (same-origin → cookie phiên hoạt động).
+      // Đổi target nếu SERVER_PORT khác 4555.
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+    },
+  },
 });

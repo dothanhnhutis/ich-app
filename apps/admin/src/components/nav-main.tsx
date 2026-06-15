@@ -17,6 +17,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
+import { Link } from "@tanstack/react-router";
 
 export function NavMain({
   items,
@@ -64,9 +65,12 @@ export function NavMain({
           </Collapsible>
         ))}
         <SidebarMenuItem>
-          <SidebarMenuButton tooltip={"1231"}>
+          <SidebarMenuButton
+            tooltip={"1231"}
+            render={<Link to="/roles" search={{ page: 1, page_size: 20 }} />}
+          >
             {items[0].icon && <ShieldUserIcon />}
-            <span>test</span>
+            <span>Quyền truy cập</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

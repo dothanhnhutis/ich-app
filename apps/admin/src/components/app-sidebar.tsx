@@ -20,6 +20,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import logo2 from "../assets/logo2.png";
+import { useAuth } from "@/contexts/auth-context";
 
 // This is sample data.
 const data = {
@@ -135,6 +136,13 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { profile } = useAuth();
+  const user = {
+    name: profile?.username || profile?.email || "Người dùng",
+    email: profile?.email || "",
+    avatar: "",
+  };
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -145,7 +153,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={user} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
