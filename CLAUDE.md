@@ -1,7 +1,7 @@
 # ich-app — Context dự án (handoff)
 
 > File này Claude Code **tự nạp mỗi phiên**. Mục tiêu: tiếp tục dự án trên bất kỳ máy nào.
-> Cập nhật lần cuối: 2026-06-11 (thêm **frontend admin scaffolding** — apps/admin; trước đó: CRUD item master + BOM/bom_lines, vendor, warehouse).
+> Cập nhật lần cuối: 2026-06-16 (admin: **đăng nhập thật + protected routes + CRUD vai trò + TanStack Query**; trước đó: doc/data-postgresql.md, CRUD item master + BOM/bom_lines, vendor, warehouse).
 
 ## 1. Tổng quan
 App Rust theo kiến trúc **clean/hexagonal** — RBAC auth + quản lý kho (warehouse) + nhà cung cấp (vendor) + **item master/BOM** (sản xuất mỹ phẩm). Giao tiếp tiếng Việt; message lỗi trả về tiếng Việt.
@@ -125,6 +125,7 @@ GET list: `/vendors?code=&name=&vendor_type=&sort=code:asc,created_at:desc&page=
 2. **Áp Live-apply** lên DB local (mục 4) hoặc rebuild volume; thêm `base_uom` vào `data/items.csv` + bật `COPY items` ở `005_seed.sql` **trước khi** seed item.
 3. Mở rộng: `item_uom_conversions` CRUD; `vendor_items` (mua hàng: vendor_sku/is_preferred/purchase_uom/lead_time/MOQ) + `vendor_item_prices`; `item_lots` (density override + qc_status QUARANTINE/RELEASED/REJECTED + FEFO) → inventory; lock `base_uom` thực khi có `inventory_transactions`; cho phép đổi item `type` (kèm re-validate authz/packaging).
 4. Cân nhắc: `AppError::Conflict` (409); PATCH set NULL cột nullable (sentinel/`Option<Option<T>>`); tách `001_init.sql` khi quá lớn.
+5. **Frontend** (mục 12): đã có đăng nhập + protected routes + CRUD vai trò (react-query). Cần **tài khoản có mật khẩu** để e2e luồng login → /roles (tạo/sửa/xoá + chọn quyền). Tiếp: nối CRUD các resource còn lại (warehouse/vendor/item/BOM) theo mẫu `/roles`; hiển thị quyền người dùng (`useHasPermission`) thay chỗ hardcode `canUpdate/canDelete`.
 
 ## 11. Bản đồ file chính
 - **Domain**: `libs/domain/src/entities/{location,zone,bin,vendor,item,bom,user,role}.rs`, `repositories.rs` (traits), `errors.rs` (`DomainError`).
@@ -133,10 +134,16 @@ GET list: `/vendors?code=&name=&vendor_type=&sort=code:asc,created_at:desc&page=
 - **API**: `apps/api/src/{main.rs, errors.rs, extractor.rs}`, `middlewares/{auth.rs, authz.rs}`, `handlers/*_handler.rs`, `routes/*_route.rs`.
 - **DB chưa có code .rs**: `item_uom_conversions` (trong `001_init.sql`) — CRUD để follow-up.
 - **Shared/DB**: `libs/shared/src/config.rs`, `migrations/00{1..5}_*.sql`, `data/*.csv`, `docker-compose.dev.yaml`.
-- **Frontend**: `apps/admin/src/{main.tsx, App.tsx, routes/*, components/ui/*, components/ThemeProvider.tsx, hooks/use-theme.ts, contexts/theme-context.ts, lib/utils.ts}` (xem mục 12).
+- **Frontend**: `apps/admin/src/{main.tsx, App.tsx(router context+providers), routes/{__root,index,login}.tsx, routes/_protected/{route,dashboard,profile,roles}.tsx, components/{auth-provider,app-sidebar,nav-*,role-form-sheet,delete-role-dialog,table-pagenation,StatusBadge,ThemeProvider}.tsx, components/ui/*, contexts/{auth-context,theme-context}.ts, lib/{api,utils}.ts, hooks/use-theme.ts, vite.config.ts(proxy)}` (xem mục 12).
+- **Docs**: `doc/data-postgresql.md` (mô tả schema PostgreSQL — 19 bảng, ERD, quy ước, enum, FK, seed).
 
-## 12. Frontend admin (apps/admin) — WIP UI
-SPA quản trị, **tách hẳn** backend Rust. Stack: **React 19 + Vite 8 + TanStack Router** (file-based; `routeTree.gen.ts` do `@tanstack/router-plugin` tự sinh) + **TanStack React Form** + **Zod** + **Tailwind v4** (`@tailwindcss/vite`) + **shadcn/ui** (`@base-ui/react`, style base-luma) + lucide-react + React Compiler. Quản lý gói: **pnpm**.
-- Cấu trúc: `src/routes/{__root,index,login}.tsx` (route), `components/ui/{button,field,input,label,separator}.tsx` (shadcn), `ThemeProvider` + `hooks/use-theme.ts` + `contexts/theme-context.ts` (dark/light), `lib/utils.ts` (`cn`), `assets/*`, `index.css` (tailwind). `App.tsx` = RouterProvider + ThemeProvider.
-- Chạy: `cd apps/admin && pnpm install && pnpm dev` (Vite). Build: `pnpm build` (`tsc -b && vite build`); lint `pnpm lint`. `.tanstack/` đã gitignore.
-- Trạng thái: **scaffolding UI** — `/login` (form email/mật khẩu + zod, nút GitHub placeholder) **CHƯA gọi API backend**; `/` là stub "Welcome Home". Khi nối API: backend mở origin qua `CORS_ALLOWED_ORIGINS` + cookie phiên (`COOKIE_*`).
+## 12. Frontend admin (apps/admin) — auth + role CRUD ✅
+SPA quản trị, **tách hẳn** backend Rust. Stack: **React 19 + Vite 8 + TanStack Router** (file-based; `routeTree.gen.ts` do `@tanstack/router-plugin` tự sinh) + **TanStack React Query** (data layer) + **TanStack React Form** + **Zod** + **Tailwind v4** + **shadcn/ui** (`@base-ui/react`, style base-luma) + lucide-react + React Compiler. Quản lý gói: **pnpm**.
+
+- **Kết nối API (dev)**: **Vite proxy** `/api` → `http://localhost:4555` (`vite.config.ts`) → same-origin nên cookie `session` **httpOnly** hoạt động (KHÔNG cần CORS). ⚠️ Dev cần backend `COOKIE_SECURE=false` (cookie qua http). Client **`lib/api.ts`**: `fetch` `credentials:"include"` + class `ApiError`; base = `import.meta.env.VITE_API_URL ?? ""` (set `VITE_API_URL` để switch direct/prod). Endpoint: `api.login/me/logout`, `api.roles.{list,create,update,remove,permissionsOf}`, `api.permissions.list`.
+- **Auth**: `components/auth-provider.tsx` (`AuthContext` ở `contexts/auth-context.ts`) giữ `{profile, hydrating}` + `login/logout`; mount → hydrate qua `GET /users/me`. `App.tsx` bơm `auth` vào **router context** + **hydration-gating** (hiện splash khi `hydrating` rồi mới render `RouterProvider` → `beforeLoad` luôn thấy trạng thái đã settle, F5 không bị đá ra). `routes/_protected/route.tsx` `beforeLoad` chặn chưa đăng nhập → `/login?redirect=`; `/login` (`login.tsx`) gọi `api.login` → `/profile`, và tự về `/profile` nếu đã đăng nhập; đăng xuất ở `nav-user`.
+- **Data layer**: `QueryClientProvider` ở `App.tsx`. List dùng `useQuery` (vd key `["roles",{page,page_size}]`) + `keepPreviousData` (đổi trang không nháy skeleton, quay lại trang đã xem là tức thì); **invalidate** key sau tạo/sửa/xoá (thay refetch tay).
+- **CRUD vai trò** (`/roles`, `routes/_protected/roles.tsx`) — mẫu cho các trang list sau: bảng (`components/ui/table`) + **tổng số** + dropdown **page-size** (10/20/50/100, đổi → về trang 1); component `table-pagenation` nhận **`onPageChange`** (route sở hữu search param, type-safe). Tạo/Sửa qua `RoleFormSheet` (Sheet + React-Form/Zod, **chọn quyền theo nhóm** từ `GET /permissions`; Sửa pre-check `GET /roles/{id}/permissions`; bắt buộc ≥1 quyền); Xoá xác nhận (`DeleteRoleDialog`); tôn trọng `can_update`/`can_delete` (role hệ thống ẩn nút). `StatusBadge` hiển thị trạng thái.
+- **Cấu trúc**: `routes/{__root(router context),index,login}.tsx` + `routes/_protected/{route(sidebar+breadcrumb layout),dashboard,profile,roles}.tsx`; `components/{auth-provider,app-sidebar,nav-main,nav-user,role-form-sheet,delete-role-dialog,table-pagenation,StatusBadge}.tsx`; `components/ui/*` (button/field/input/label/separator/table/badge/pagination/sheet/dropdown-menu/sidebar/avatar/breadcrumb/collapsible/skeleton/tooltip); `lib/{api,utils(cn+calcPages)}.ts`; `contexts/{auth-context,theme-context}.ts`; `ThemeProvider` + `hooks/use-theme.ts`.
+- **Chạy**: `cd apps/admin && pnpm install && pnpm dev` (:5173). Build: `pnpm build` (`tsc -b && vite build`) — **xanh**. `.tanstack/` đã gitignore.
+- **Trạng thái**: auth + role CRUD **chạy được (build xanh)**; ❌ **CHƯA e2e với đăng nhập thật** — cần tài khoản có mật khẩu (mật khẩu `gaconght@gmail.com` chưa biết).
