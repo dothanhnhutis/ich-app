@@ -4,8 +4,8 @@ use domain::entities::{
     Item, ItemFilter, ItemSort, ItemSortField, ItemType, ItemUpdate, NewItem, PackagingLevel,
     SortDir,
 };
-use domain::errors::DomainError;
-use domain::repositories::ItemRepository;
+use application::errors::AppError;
+use application::ports::ItemRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -24,36 +24,36 @@ const ITEM_LIST_WHERE: &str = r#"
       AND ($4::text[] IS NULL OR type = ANY($4))
 "#;
 
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e {
         match db.constraint() {
             Some("uq_items_sku") => {
-                return DomainError::AlreadyExists("SKU vật tư đã tồn tại".into());
+                return AppError::Validation("SKU vật tư đã tồn tại".into());
             }
             Some("chk_items_type") => {
-                return DomainError::Validation("Loại vật tư không hợp lệ".into());
+                return AppError::Validation("Loại vật tư không hợp lệ".into());
             }
             Some("chk_items_pkg_level") => {
-                return DomainError::Validation(
+                return AppError::Validation(
                     "Cấp bao bì chỉ dành cho vật tư loại PACKAGING (và bắt buộc khi PACKAGING)".into(),
                 );
             }
             Some("chk_items_phantom") => {
-                return DomainError::Validation("Item phantom bắt buộc phải có BOM".into());
+                return AppError::Validation("Item phantom bắt buộc phải có BOM".into());
             }
             Some("chk_items_density") => {
-                return DomainError::Validation("Khối lượng riêng phải lớn hơn 0".into());
+                return AppError::Validation("Khối lượng riêng phải lớn hơn 0".into());
             }
             Some("chk_items_shelf_life") => {
-                return DomainError::Validation("Hạn sử dụng (ngày) phải lớn hơn 0".into());
+                return AppError::Validation("Hạn sử dụng (ngày) phải lớn hơn 0".into());
             }
             Some("chk_items_pao") => {
-                return DomainError::Validation("PAO (tháng) phải lớn hơn 0".into());
+                return AppError::Validation("PAO (tháng) phải lớn hơn 0".into());
             }
             _ => {}
         }
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 fn order_by_clause(sort: &[ItemSort]) -> String {
@@ -106,17 +106,17 @@ struct ItemRow {
 }
 
 impl TryFrom<ItemRow> for Item {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(r: ItemRow) -> Result<Self, Self::Error> {
         let packaging_level = match r.packaging_level {
-            Some(s) => Some(PackagingLevel::from_str(&s).map_err(DomainError::Internal)?),
+            Some(s) => Some(PackagingLevel::from_str(&s).map_err(AppError::Internal)?),
             None => None,
         };
         Ok(Item {
             id: r.id,
             sku: r.sku,
             name: r.name,
-            item_type: ItemType::from_str(&r.item_type).map_err(DomainError::Internal)?,
+            item_type: ItemType::from_str(&r.item_type).map_err(AppError::Internal)?,
             base_uom: r.base_uom,
             packaging_level,
             is_purchasable: r.is_purchasable,
@@ -148,7 +148,7 @@ impl PgItemRepository {
 }
 
 impl ItemRepository for PgItemRepository {
-    async fn create(&self, new_item: NewItem) -> Result<Item, DomainError> {
+    async fn create(&self, new_item: NewItem) -> Result<Item, AppError> {
         let sql = format!(
             r#"
             INSERT INTO items
@@ -182,7 +182,7 @@ impl ItemRepository for PgItemRepository {
         Item::try_from(row)
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<Item>, DomainError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Item>, AppError> {
         let sql = format!("SELECT {ITEM_COLS} FROM items WHERE id = $1 AND deleted_at IS NULL");
         let row: Option<ItemRow> = sqlx::query_as(&sql)
             .bind(id)
@@ -192,7 +192,7 @@ impl ItemRepository for PgItemRepository {
         row.map(Item::try_from).transpose()
     }
 
-    async fn list(&self, filter: ItemFilter) -> Result<(Vec<Item>, i64), DomainError> {
+    async fn list(&self, filter: ItemFilter) -> Result<(Vec<Item>, i64), AppError> {
         let count_sql = format!("SELECT COUNT(*) FROM items {ITEM_LIST_WHERE}");
         let total: i64 = sqlx::query_scalar(&count_sql)
             .bind(&filter.sku)
@@ -224,7 +224,7 @@ impl ItemRepository for PgItemRepository {
         Ok((items, total))
     }
 
-    async fn update(&self, id: Uuid, changes: ItemUpdate) -> Result<Option<Item>, DomainError> {
+    async fn update(&self, id: Uuid, changes: ItemUpdate) -> Result<Option<Item>, AppError> {
         let packaging_level = changes.packaging_level.map(|p| p.as_str());
         // `type` & `base_uom` bị khoá → không nằm trong SET.
         let sql = format!(
@@ -270,7 +270,7 @@ impl ItemRepository for PgItemRepository {
         row.map(Item::try_from).transpose()
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let res =
             sqlx::query("UPDATE items SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
                 .bind(id)
@@ -278,12 +278,12 @@ impl ItemRepository for PgItemRepository {
                 .await
                 .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Vật tư không tồn tại".into()));
+            return Err(AppError::NotFound("Vật tư không tồn tại".into()));
         }
         Ok(())
     }
 
-    async fn is_referenced(&self, item_id: Uuid) -> Result<bool, DomainError> {
+    async fn is_referenced(&self, item_id: Uuid) -> Result<bool, AppError> {
         let referenced: bool = sqlx::query_scalar(
             r#"
             SELECT

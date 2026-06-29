@@ -1,6 +1,6 @@
-use domain::cache::SessionCache;
+use application::ports::SessionCache;
 use domain::entities::CachedSession;
-use domain::errors::DomainError;
+use application::errors::AppError;
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use uuid::Uuid;
@@ -31,16 +31,16 @@ fn user_key(user_id: Uuid) -> String {
     format!("user_sessions:{user_id}")
 }
 
-fn map_redis(e: redis::RedisError) -> DomainError {
-    DomainError::Internal(e.to_string())
+fn map_redis(e: redis::RedisError) -> AppError {
+    AppError::Internal(e.to_string())
 }
 
-fn map_json(e: serde_json::Error) -> DomainError {
-    DomainError::Internal(e.to_string())
+fn map_json(e: serde_json::Error) -> AppError {
+    AppError::Internal(e.to_string())
 }
 
 impl SessionCache for RedisSessionCache {
-    async fn get(&self, token_hash: &str) -> Result<Option<CachedSession>, DomainError> {
+    async fn get(&self, token_hash: &str) -> Result<Option<CachedSession>, AppError> {
         let mut conn = self.conn.clone();
         let raw: Option<String> = conn.get(session_key(token_hash)).await.map_err(map_redis)?;
         match raw {
@@ -54,7 +54,7 @@ impl SessionCache for RedisSessionCache {
         token_hash: &str,
         entry: &CachedSession,
         ttl_secs: i64,
-    ) -> Result<(), DomainError> {
+    ) -> Result<(), AppError> {
         let mut conn = self.conn.clone();
         let json = serde_json::to_string(entry).map_err(map_json)?;
         let skey = session_key(token_hash);
@@ -75,14 +75,14 @@ impl SessionCache for RedisSessionCache {
         Ok(())
     }
 
-    async fn remove(&self, token_hash: &str) -> Result<(), DomainError> {
+    async fn remove(&self, token_hash: &str) -> Result<(), AppError> {
         let mut conn = self.conn.clone();
         // Chỉ xóa session key; phần tử thừa trong user set tự hết hạn theo TTL.
         let _: () = conn.del(session_key(token_hash)).await.map_err(map_redis)?;
         Ok(())
     }
 
-    async fn remove_all_for_user(&self, user_id: Uuid) -> Result<(), DomainError> {
+    async fn remove_all_for_user(&self, user_id: Uuid) -> Result<(), AppError> {
         let mut conn = self.conn.clone();
         let ukey = user_key(user_id);
         let hashes: Vec<String> = conn.smembers(&ukey).await.map_err(map_redis)?;

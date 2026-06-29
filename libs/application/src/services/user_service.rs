@@ -17,7 +17,7 @@ use domain::entities::{
     NewPasswordToken, NewUser, PasswordTokenType, SortDir, UserFilter, UserSort, UserSortField,
     UserStatus, UserUpdate,
 };
-use domain::repositories::{PasswordTokenRepository, RoleRepository, UserRepository};
+use crate::ports::{PasswordTokenRepository, RoleRepository, UserRepository};
 use shared::messaging::{EmailJob, SetPasswordEmail};
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
@@ -177,7 +177,7 @@ where
 
     /// Mã permission của một user (cho RBAC).
     pub async fn permission_codes(&self, user_id: Uuid) -> Result<Vec<String>, AppError> {
-        Ok(self.role_repo.find_permission_codes_for_user(user_id).await?)
+        self.role_repo.find_permission_codes_for_user(user_id).await
     }
 
     /// Danh sách user (lọc + phân trang + sắp xếp).

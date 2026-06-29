@@ -9,7 +9,7 @@ use crate::errors::AppError;
 use domain::entities::{
     ItemFilter, ItemSort, ItemSortField, ItemType, ItemUpdate, NewItem, PackagingLevel, SortDir,
 };
-use domain::repositories::ItemRepository;
+use crate::ports::ItemRepository;
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;

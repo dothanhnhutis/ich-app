@@ -7,7 +7,7 @@ use crate::dto::pagination::Paginated;
 use crate::dto::zone_dto::{CreateZoneRequest, ListZonesQuery, UpdateZoneRequest, ZoneResponse};
 use crate::errors::AppError;
 use domain::entities::{NewZone, SortDir, ZoneFilter, ZoneSort, ZoneSortField, ZoneType, ZoneUpdate};
-use domain::repositories::{LocationRepository, ZoneRepository};
+use crate::ports::{LocationRepository, ZoneRepository};
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;

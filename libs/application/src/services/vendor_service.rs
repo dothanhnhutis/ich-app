@@ -11,7 +11,7 @@ use crate::errors::AppError;
 use domain::entities::{
     NewVendor, SortDir, VendorFilter, VendorSort, VendorSortField, VendorType, VendorUpdate,
 };
-use domain::repositories::VendorRepository;
+use crate::ports::VendorRepository;
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;

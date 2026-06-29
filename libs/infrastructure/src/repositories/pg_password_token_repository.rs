@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use domain::entities::{NewPasswordToken, PasswordToken, PasswordTokenType};
-use domain::errors::DomainError;
-use domain::repositories::PasswordTokenRepository;
+use application::errors::AppError;
+use application::ports::PasswordTokenRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -20,14 +20,14 @@ struct PasswordTokenRow {
 }
 
 impl TryFrom<PasswordTokenRow> for PasswordToken {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(r: PasswordTokenRow) -> Result<Self, Self::Error> {
         Ok(PasswordToken {
             id: r.id,
             user_id: r.user_id,
             token_hash: r.token_hash,
             token_type: PasswordTokenType::from_str(&r.token_type)
-                .map_err(DomainError::Internal)?,
+                .map_err(AppError::Internal)?,
             expires_at: r.expires_at,
             used_at: r.used_at,
             created_at: r.created_at,
@@ -35,13 +35,13 @@ impl TryFrom<PasswordTokenRow> for PasswordToken {
     }
 }
 
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e
         && db.is_unique_violation()
     {
-        return DomainError::AlreadyExists("Token đã tồn tại".into());
+        return AppError::Validation("Token đã tồn tại".into());
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 const INSERT_TOKEN: &str = r#"
@@ -68,7 +68,7 @@ impl PgPasswordTokenRepository {
 }
 
 impl PasswordTokenRepository for PgPasswordTokenRepository {
-    async fn create(&self, t: NewPasswordToken) -> Result<PasswordToken, DomainError> {
+    async fn create(&self, t: NewPasswordToken) -> Result<PasswordToken, AppError> {
         let row: PasswordTokenRow = sqlx::query_as(INSERT_TOKEN)
             .bind(t.user_id)
             .bind(t.token_hash)
@@ -83,7 +83,7 @@ impl PasswordTokenRepository for PgPasswordTokenRepository {
     async fn find_active_by_hash(
         &self,
         token_hash: &str,
-    ) -> Result<Option<PasswordToken>, DomainError> {
+    ) -> Result<Option<PasswordToken>, AppError> {
         let row: Option<PasswordTokenRow> = sqlx::query_as(FIND_ACTIVE_BY_HASH)
             .bind(token_hash)
             .fetch_optional(&self.pool)
@@ -96,7 +96,7 @@ impl PasswordTokenRepository for PgPasswordTokenRepository {
         &self,
         user_id: Uuid,
         token_type: PasswordTokenType,
-    ) -> Result<(), DomainError> {
+    ) -> Result<(), AppError> {
         sqlx::query(
             "UPDATE password_tokens SET used_at = NOW() WHERE user_id = $1 AND type = $2 AND used_at IS NULL",
         )

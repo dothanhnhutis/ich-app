@@ -3,8 +3,8 @@ use std::str::FromStr;
 use domain::entities::{
     NewRole, Permission, Role, RoleFilter, RoleSort, RoleSortField, RoleStatus, RoleUpdate, SortDir,
 };
-use domain::errors::DomainError;
-use domain::repositories::RoleRepository;
+use application::errors::AppError;
+use application::ports::RoleRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -34,13 +34,13 @@ const ROLE_LIST_WHERE: &str = r#"
       AND ($3::text IS NULL OR status = $3)
 "#;
 
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e
         && db.is_foreign_key_violation()
     {
-        return DomainError::Validation("Một số quyền không tồn tại".into());
+        return AppError::Validation("Một số quyền không tồn tại".into());
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 /// Dựng mệnh đề ORDER BY từ danh sách sort (cột + hướng đều là literal từ match → an toàn injection).
@@ -100,13 +100,13 @@ struct RoleRow {
 }
 
 impl TryFrom<RoleRow> for Role {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(r: RoleRow) -> Result<Self, Self::Error> {
         Ok(Role {
             id: r.id,
             name: r.name,
             description: r.description,
-            status: RoleStatus::from_str(&r.status).map_err(DomainError::Internal)?,
+            status: RoleStatus::from_str(&r.status).map_err(AppError::Internal)?,
             deactivated_at: r.deactivated_at,
             can_delete: r.can_delete,
             can_update: r.can_update,
@@ -131,7 +131,7 @@ impl RoleRepository for PgRoleRepository {
     async fn find_permission_codes_for_user(
         &self,
         user_id: Uuid,
-    ) -> Result<Vec<String>, DomainError> {
+    ) -> Result<Vec<String>, AppError> {
         let codes: Vec<String> = sqlx::query_scalar(PERMISSION_CODES_FOR_USER)
             .bind(user_id)
             .fetch_all(&self.pool)
@@ -140,7 +140,7 @@ impl RoleRepository for PgRoleRepository {
         Ok(codes)
     }
 
-    async fn find_all_permissions(&self) -> Result<Vec<Permission>, DomainError> {
+    async fn find_all_permissions(&self) -> Result<Vec<Permission>, AppError> {
         let rows: Vec<PermissionRow> = sqlx::query_as(ALL_PERMISSIONS)
             .fetch_all(&self.pool)
             .await
@@ -152,7 +152,7 @@ impl RoleRepository for PgRoleRepository {
         &self,
         new_role: NewRole,
         permission_ids: &[Uuid],
-    ) -> Result<Role, DomainError> {
+    ) -> Result<Role, AppError> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
 
         let sql = format!(
@@ -180,7 +180,7 @@ impl RoleRepository for PgRoleRepository {
         Role::try_from(row)
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<Role>, DomainError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Role>, AppError> {
         let sql = format!("SELECT {ROLE_COLS} FROM roles WHERE id = $1 AND deleted_at IS NULL");
         let row: Option<RoleRow> = sqlx::query_as(&sql)
             .bind(id)
@@ -190,7 +190,7 @@ impl RoleRepository for PgRoleRepository {
         row.map(Role::try_from).transpose()
     }
 
-    async fn find_permissions_for_role(&self, role_id: Uuid) -> Result<Vec<Permission>, DomainError> {
+    async fn find_permissions_for_role(&self, role_id: Uuid) -> Result<Vec<Permission>, AppError> {
         let rows: Vec<PermissionRow> = sqlx::query_as(
             r#"
             SELECT p.id, p.code, p.description
@@ -207,7 +207,7 @@ impl RoleRepository for PgRoleRepository {
         Ok(rows.into_iter().map(Permission::from).collect())
     }
 
-    async fn find_roles_for_user(&self, user_id: Uuid) -> Result<Vec<Role>, DomainError> {
+    async fn find_roles_for_user(&self, user_id: Uuid) -> Result<Vec<Role>, AppError> {
         // Qualify `r.` vì cột created_at trùng ở cả user_roles lẫn roles.
         let rows: Vec<RoleRow> = sqlx::query_as(
             r#"
@@ -228,7 +228,7 @@ impl RoleRepository for PgRoleRepository {
             .collect::<Result<Vec<_>, _>>()
     }
 
-    async fn list(&self, filter: RoleFilter) -> Result<(Vec<Role>, i64), DomainError> {
+    async fn list(&self, filter: RoleFilter) -> Result<(Vec<Role>, i64), AppError> {
         let status = filter.status.map(|s| s.as_str());
 
         let count_sql = format!("SELECT COUNT(*) FROM roles {ROLE_LIST_WHERE}");
@@ -261,7 +261,7 @@ impl RoleRepository for PgRoleRepository {
         Ok((roles, total))
     }
 
-    async fn update(&self, id: Uuid, changes: RoleUpdate) -> Result<Option<Role>, DomainError> {
+    async fn update(&self, id: Uuid, changes: RoleUpdate) -> Result<Option<Role>, AppError> {
         let status = changes.status.map(|s| s.as_str());
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
 
@@ -314,14 +314,14 @@ impl RoleRepository for PgRoleRepository {
         Role::try_from(row).map(Some)
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let res = sqlx::query("UPDATE roles SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
             .bind(id)
             .execute(&self.pool)
             .await
             .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Vai trò không tồn tại".into()));
+            return Err(AppError::NotFound("Vai trò không tồn tại".into()));
         }
         Ok(())
     }

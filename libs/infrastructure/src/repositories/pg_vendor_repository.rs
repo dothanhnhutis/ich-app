@@ -3,8 +3,8 @@ use std::str::FromStr;
 use domain::entities::{
     NewVendor, SortDir, Vendor, VendorFilter, VendorSort, VendorSortField, VendorType, VendorUpdate,
 };
-use domain::errors::DomainError;
-use domain::repositories::VendorRepository;
+use application::errors::AppError;
+use application::ports::VendorRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -20,20 +20,20 @@ const VENDOR_LIST_WHERE: &str = r#"
       AND ($3::text IS NULL OR vendor_type = $3)
 "#;
 
-/// Map lỗi DB → DomainError theo TÊN constraint/index (PG trả tên cả với unique index).
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+/// Map lỗi DB → AppError theo TÊN constraint/index (PG trả tên cả với unique index).
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e {
         match db.constraint() {
             Some("uq_vendors_code") => {
-                return DomainError::AlreadyExists("Mã nhà cung cấp đã tồn tại".into());
+                return AppError::Validation("Mã nhà cung cấp đã tồn tại".into());
             }
             Some("chk_vendors_type") => {
-                return DomainError::Validation("Loại nhà cung cấp không hợp lệ".into());
+                return AppError::Validation("Loại nhà cung cấp không hợp lệ".into());
             }
             _ => {}
         }
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 fn order_by_clause(sort: &[VendorSort]) -> String {
@@ -77,13 +77,13 @@ struct VendorRow {
 }
 
 impl TryFrom<VendorRow> for Vendor {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(r: VendorRow) -> Result<Self, Self::Error> {
         Ok(Vendor {
             id: r.id,
             code: r.code,
             name: r.name,
-            vendor_type: VendorType::from_str(&r.vendor_type).map_err(DomainError::Internal)?,
+            vendor_type: VendorType::from_str(&r.vendor_type).map_err(AppError::Internal)?,
             tax_code: r.tax_code,
             address: r.address,
             phone: r.phone,
@@ -107,7 +107,7 @@ impl PgVendorRepository {
 }
 
 impl VendorRepository for PgVendorRepository {
-    async fn create(&self, new_vendor: NewVendor) -> Result<Vendor, DomainError> {
+    async fn create(&self, new_vendor: NewVendor) -> Result<Vendor, AppError> {
         let sql = format!(
             r#"
             INSERT INTO vendors
@@ -131,7 +131,7 @@ impl VendorRepository for PgVendorRepository {
         Vendor::try_from(row)
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<Vendor>, DomainError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Vendor>, AppError> {
         let sql = format!("SELECT {VENDOR_COLS} FROM vendors WHERE id = $1 AND deleted_at IS NULL");
         let row: Option<VendorRow> = sqlx::query_as(&sql)
             .bind(id)
@@ -141,7 +141,7 @@ impl VendorRepository for PgVendorRepository {
         row.map(Vendor::try_from).transpose()
     }
 
-    async fn list(&self, filter: VendorFilter) -> Result<(Vec<Vendor>, i64), DomainError> {
+    async fn list(&self, filter: VendorFilter) -> Result<(Vec<Vendor>, i64), AppError> {
         let count_sql = format!("SELECT COUNT(*) FROM vendors {VENDOR_LIST_WHERE}");
         let total: i64 = sqlx::query_scalar(&count_sql)
             .bind(&filter.code)
@@ -172,7 +172,7 @@ impl VendorRepository for PgVendorRepository {
         Ok((vendors, total))
     }
 
-    async fn update(&self, id: Uuid, changes: VendorUpdate) -> Result<Option<Vendor>, DomainError> {
+    async fn update(&self, id: Uuid, changes: VendorUpdate) -> Result<Option<Vendor>, AppError> {
         let vendor_type = changes.vendor_type.map(|v| v.as_str());
         let sql = format!(
             r#"
@@ -205,7 +205,7 @@ impl VendorRepository for PgVendorRepository {
         row.map(Vendor::try_from).transpose()
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let res =
             sqlx::query("UPDATE vendors SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
                 .bind(id)
@@ -213,7 +213,7 @@ impl VendorRepository for PgVendorRepository {
                 .await
                 .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Nhà cung cấp không tồn tại".into()));
+            return Err(AppError::NotFound("Nhà cung cấp không tồn tại".into()));
         }
         Ok(())
     }

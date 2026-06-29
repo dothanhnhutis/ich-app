@@ -12,7 +12,7 @@ use crate::errors::AppError;
 use domain::entities::{
     NewRole, RoleFilter, RoleSort, RoleSortField, RoleStatus, RoleUpdate, SortDir,
 };
-use domain::repositories::RoleRepository;
+use crate::ports::RoleRepository;
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;

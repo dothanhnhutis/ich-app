@@ -7,7 +7,7 @@ use crate::dto::bin_dto::{BinResponse, CreateBinRequest, ListBinsQuery, UpdateBi
 use crate::dto::pagination::Paginated;
 use crate::errors::AppError;
 use domain::entities::{BinFilter, BinSort, BinSortField, BinUpdate, NewBin, SortDir};
-use domain::repositories::{BinRepository, ZoneRepository};
+use crate::ports::{BinRepository, ZoneRepository};
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;

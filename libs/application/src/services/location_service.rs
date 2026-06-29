@@ -11,7 +11,7 @@ use crate::errors::AppError;
 use domain::entities::{
     LocationFilter, LocationSort, LocationSortField, LocationUpdate, NewLocation, SortDir,
 };
-use domain::repositories::LocationRepository;
+use crate::ports::LocationRepository;
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;

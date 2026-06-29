@@ -1,8 +1,8 @@
 use domain::entities::{
     Location, LocationFilter, LocationSort, LocationSortField, LocationUpdate, NewLocation, SortDir,
 };
-use domain::errors::DomainError;
-use domain::repositories::LocationRepository;
+use application::errors::AppError;
+use application::ports::LocationRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -17,13 +17,13 @@ const LOCATION_LIST_WHERE: &str = r#"
       AND ($2::text IS NULL OR name = $2)
 "#;
 
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e
         && db.is_unique_violation()
     {
-        return DomainError::AlreadyExists("Mã kho đã tồn tại".into());
+        return AppError::Validation("Mã kho đã tồn tại".into());
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 /// Dựng ORDER BY từ sort (cột + hướng đều literal từ match → an toàn injection).
@@ -87,7 +87,7 @@ impl PgLocationRepository {
 }
 
 impl LocationRepository for PgLocationRepository {
-    async fn create(&self, new_location: NewLocation) -> Result<Location, DomainError> {
+    async fn create(&self, new_location: NewLocation) -> Result<Location, AppError> {
         let sql = format!(
             "INSERT INTO locations (code, name, address) VALUES ($1, $2, $3) RETURNING {LOCATION_COLS}"
         );
@@ -101,7 +101,7 @@ impl LocationRepository for PgLocationRepository {
         Ok(Location::from(row))
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<Location>, DomainError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Location>, AppError> {
         let sql =
             format!("SELECT {LOCATION_COLS} FROM locations WHERE id = $1 AND deleted_at IS NULL");
         let row: Option<LocationRow> = sqlx::query_as(&sql)
@@ -112,7 +112,7 @@ impl LocationRepository for PgLocationRepository {
         Ok(row.map(Location::from))
     }
 
-    async fn list(&self, filter: LocationFilter) -> Result<(Vec<Location>, i64), DomainError> {
+    async fn list(&self, filter: LocationFilter) -> Result<(Vec<Location>, i64), AppError> {
         let count_sql = format!("SELECT COUNT(*) FROM locations {LOCATION_LIST_WHERE}");
         let total: i64 = sqlx::query_scalar(&count_sql)
             .bind(&filter.code)
@@ -141,7 +141,7 @@ impl LocationRepository for PgLocationRepository {
         &self,
         id: Uuid,
         changes: LocationUpdate,
-    ) -> Result<Option<Location>, DomainError> {
+    ) -> Result<Option<Location>, AppError> {
         let sql = format!(
             r#"
             UPDATE locations SET
@@ -163,7 +163,7 @@ impl LocationRepository for PgLocationRepository {
         Ok(row.map(Location::from))
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let res =
             sqlx::query("UPDATE locations SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
                 .bind(id)
@@ -171,12 +171,12 @@ impl LocationRepository for PgLocationRepository {
                 .await
                 .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Kho không tồn tại".into()));
+            return Err(AppError::NotFound("Kho không tồn tại".into()));
         }
         Ok(())
     }
 
-    async fn has_active_zones(&self, location_id: Uuid) -> Result<bool, DomainError> {
+    async fn has_active_zones(&self, location_id: Uuid) -> Result<bool, AppError> {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM warehouse_zones WHERE location_id = $1 AND deleted_at IS NULL)",
         )

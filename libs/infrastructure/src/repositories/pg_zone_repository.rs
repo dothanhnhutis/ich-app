@@ -3,8 +3,8 @@ use std::str::FromStr;
 use domain::entities::{
     NewZone, SortDir, Zone, ZoneFilter, ZoneSort, ZoneSortField, ZoneType, ZoneUpdate,
 };
-use domain::errors::DomainError;
-use domain::repositories::ZoneRepository;
+use application::errors::AppError;
+use application::ports::ZoneRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -20,31 +20,31 @@ const ZONE_LIST_WHERE: &str = r#"
       AND ($3::text IS NULL OR zone_type = $3)
 "#;
 
-/// Map lỗi DB → DomainError theo TÊN constraint/index (PG trả tên cả với unique index).
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+/// Map lỗi DB → AppError theo TÊN constraint/index (PG trả tên cả với unique index).
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e {
         match db.constraint() {
             Some("uq_warehouse_zones_loc_name") => {
-                return DomainError::AlreadyExists("Tên khu vực đã tồn tại trong kho".into());
+                return AppError::Validation("Tên khu vực đã tồn tại trong kho".into());
             }
             Some("chk_warehouse_zones_temp_range") => {
-                return DomainError::Validation(
+                return AppError::Validation(
                     "Nhiệt độ tối thiểu phải nhỏ hơn hoặc bằng tối đa".into(),
                 );
             }
             Some("chk_warehouse_zones_humidity") => {
-                return DomainError::Validation("Độ ẩm phải trong khoảng 0–100".into());
+                return AppError::Validation("Độ ẩm phải trong khoảng 0–100".into());
             }
             Some("chk_warehouse_zones_type") => {
-                return DomainError::Validation("Loại khu vực không hợp lệ".into());
+                return AppError::Validation("Loại khu vực không hợp lệ".into());
             }
             _ => {}
         }
         if db.is_foreign_key_violation() {
-            return DomainError::Validation("Kho không tồn tại".into());
+            return AppError::Validation("Kho không tồn tại".into());
         }
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 fn order_by_clause(sort: &[ZoneSort]) -> String {
@@ -88,13 +88,13 @@ struct ZoneRow {
 }
 
 impl TryFrom<ZoneRow> for Zone {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(r: ZoneRow) -> Result<Self, Self::Error> {
         Ok(Zone {
             id: r.id,
             location_id: r.location_id,
             name: r.name,
-            zone_type: ZoneType::from_str(&r.zone_type).map_err(DomainError::Internal)?,
+            zone_type: ZoneType::from_str(&r.zone_type).map_err(AppError::Internal)?,
             temp_min_c: r.temp_min_c,
             temp_max_c: r.temp_max_c,
             humidity_max_pct: r.humidity_max_pct,
@@ -119,7 +119,7 @@ impl PgZoneRepository {
 }
 
 impl ZoneRepository for PgZoneRepository {
-    async fn create(&self, new_zone: NewZone) -> Result<Zone, DomainError> {
+    async fn create(&self, new_zone: NewZone) -> Result<Zone, AppError> {
         let sql = format!(
             r#"
             INSERT INTO warehouse_zones
@@ -145,7 +145,7 @@ impl ZoneRepository for PgZoneRepository {
         Zone::try_from(row)
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<Zone>, DomainError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Zone>, AppError> {
         let sql =
             format!("SELECT {ZONE_COLS} FROM warehouse_zones WHERE id = $1 AND deleted_at IS NULL");
         let row: Option<ZoneRow> = sqlx::query_as(&sql)
@@ -156,7 +156,7 @@ impl ZoneRepository for PgZoneRepository {
         row.map(Zone::try_from).transpose()
     }
 
-    async fn list(&self, filter: ZoneFilter) -> Result<(Vec<Zone>, i64), DomainError> {
+    async fn list(&self, filter: ZoneFilter) -> Result<(Vec<Zone>, i64), AppError> {
         let count_sql = format!("SELECT COUNT(*) FROM warehouse_zones {ZONE_LIST_WHERE}");
         let total: i64 = sqlx::query_scalar(&count_sql)
             .bind(filter.location_id)
@@ -187,7 +187,7 @@ impl ZoneRepository for PgZoneRepository {
         Ok((zones, total))
     }
 
-    async fn update(&self, id: Uuid, changes: ZoneUpdate) -> Result<Option<Zone>, DomainError> {
+    async fn update(&self, id: Uuid, changes: ZoneUpdate) -> Result<Option<Zone>, AppError> {
         let zone_type = changes.zone_type.map(|z| z.as_str());
         let sql = format!(
             r#"
@@ -222,7 +222,7 @@ impl ZoneRepository for PgZoneRepository {
         row.map(Zone::try_from).transpose()
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let res = sqlx::query(
             "UPDATE warehouse_zones SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
         )
@@ -231,12 +231,12 @@ impl ZoneRepository for PgZoneRepository {
         .await
         .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Khu vực không tồn tại".into()));
+            return Err(AppError::NotFound("Khu vực không tồn tại".into()));
         }
         Ok(())
     }
 
-    async fn has_active_bins(&self, zone_id: Uuid) -> Result<bool, DomainError> {
+    async fn has_active_bins(&self, zone_id: Uuid) -> Result<bool, AppError> {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM storage_bins WHERE zone_id = $1 AND deleted_at IS NULL)",
         )

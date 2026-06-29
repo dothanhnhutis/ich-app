@@ -3,8 +3,8 @@ use std::str::FromStr;
 use domain::entities::{
     NewUser, SortDir, User, UserFilter, UserSort, UserSortField, UserStatus, UserUpdate,
 };
-use domain::errors::DomainError;
-use domain::repositories::UserRepository;
+use application::errors::AppError;
+use application::ports::UserRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -24,14 +24,14 @@ struct UserRow {
 
 /// Mapping từ DB row → Domain entity
 impl TryFrom<UserRow> for User {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(row: UserRow) -> Result<Self, Self::Error> {
         Ok(User {
             id: row.id,
             email: row.email,
             password_hash: row.password_hash,
             username: row.username,
-            status: UserStatus::from_str(&row.status).map_err(DomainError::Internal)?,
+            status: UserStatus::from_str(&row.status).map_err(AppError::Internal)?,
             deactivated_at: row.deactivated_at,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -80,16 +80,16 @@ fn user_order_by_clause(sort: &[UserSort]) -> String {
     format!("ORDER BY {}", parts.join(", "))
 }
 
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e {
         if db.is_unique_violation() {
-            return DomainError::AlreadyExists("Email đã tồn tại".into());
+            return AppError::Validation("Email đã tồn tại".into());
         }
         if db.is_foreign_key_violation() {
-            return DomainError::Validation("Role không tồn tại".into());
+            return AppError::Validation("Role không tồn tại".into());
         }
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 #[derive(Clone)]
@@ -104,7 +104,7 @@ impl PgUserRepository {
 }
 
 impl UserRepository for PgUserRepository {
-    async fn find_by_email(&self, email: &str) -> Result<Option<User>, DomainError> {
+    async fn find_by_email(&self, email: &str) -> Result<Option<User>, AppError> {
         let sql = format!("{} WHERE email = $1 AND deleted_at IS NULL", SELECT_USER);
         let row: Option<UserRow> = sqlx::query_as(&sql)
             .bind(email)
@@ -115,7 +115,7 @@ impl UserRepository for PgUserRepository {
         row.map(User::try_from).transpose()
     }
 
-    async fn find_by_id(&self, id: uuid::Uuid) -> Result<Option<User>, DomainError> {
+    async fn find_by_id(&self, id: uuid::Uuid) -> Result<Option<User>, AppError> {
         let sql = format!("{} WHERE id = $1 AND deleted_at IS NULL", SELECT_USER);
         let row: Option<UserRow> = sqlx::query_as(&sql)
             .bind(id)
@@ -126,7 +126,7 @@ impl UserRepository for PgUserRepository {
         row.map(User::try_from).transpose()
     }
 
-    async fn list(&self, filter: UserFilter) -> Result<(Vec<User>, i64), DomainError> {
+    async fn list(&self, filter: UserFilter) -> Result<(Vec<User>, i64), AppError> {
         let status = filter.status.map(|s| s.as_str());
 
         let count_sql = format!("SELECT COUNT(*) FROM users {USER_LIST_WHERE}");
@@ -157,7 +157,7 @@ impl UserRepository for PgUserRepository {
         Ok((users, total))
     }
 
-    async fn update(&self, id: Uuid, changes: UserUpdate) -> Result<Option<User>, DomainError> {
+    async fn update(&self, id: Uuid, changes: UserUpdate) -> Result<Option<User>, AppError> {
         let status = changes.status.map(|s| s.as_str());
         let sql = r#"
             UPDATE users SET
@@ -182,14 +182,14 @@ impl UserRepository for PgUserRepository {
         row.map(User::try_from).transpose()
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let res = sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
             .bind(id)
             .execute(&self.pool)
             .await
             .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Người dùng không tồn tại".into()));
+            return Err(AppError::NotFound("Người dùng không tồn tại".into()));
         }
         Ok(())
     }
@@ -198,7 +198,7 @@ impl UserRepository for PgUserRepository {
         &self,
         new_user: NewUser,
         role_ids: &[Uuid],
-    ) -> Result<User, DomainError> {
+    ) -> Result<User, AppError> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
 
         // Tạo user — status mặc định PENDING_PASSWORD, id do DB sinh.
@@ -235,7 +235,7 @@ impl UserRepository for PgUserRepository {
         username: &str,
         password_hash: &str,
         token_id: Uuid,
-    ) -> Result<(), DomainError> {
+    ) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
 
         sqlx::query(
@@ -263,7 +263,7 @@ impl UserRepository for PgUserRepository {
         user_id: Uuid,
         password_hash: &str,
         token_id: Uuid,
-    ) -> Result<(), DomainError> {
+    ) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
 
         sqlx::query(
@@ -290,7 +290,7 @@ impl UserRepository for PgUserRepository {
 async fn mark_token_used(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     token_id: Uuid,
-) -> Result<(), DomainError> {
+) -> Result<(), AppError> {
     let used =
         sqlx::query(r#"UPDATE password_tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL"#)
             .bind(token_id)
@@ -299,7 +299,7 @@ async fn mark_token_used(
             .map_err(map_sqlx_err)?;
 
     if used.rows_affected() != 1 {
-        return Err(DomainError::Validation("Liên kết đã được sử dụng".into()));
+        return Err(AppError::Validation("Liên kết đã được sử dụng".into()));
     }
     Ok(())
 }

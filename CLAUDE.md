@@ -8,13 +8,13 @@ App Rust theo kiến trúc **clean/hexagonal** — RBAC auth + quản lý kho (w
 
 - **Workspace Cargo**: `libs/{domain, application, infrastructure, shared}` + `apps/{api, worker, iops, admin}`.
 - **Stack**: Rust **edition 2024** (let-chains `if let … && …`), **axum 0.8** (route param cú pháp `{id}` KHÔNG phải `:id`), **sqlx 0.8** (runtime `query_as`/`query_scalar`, `FromRow`, transaction `pool.begin()`), `validator`, `uuid` v7, `chrono`, `serde`. Redis (cache phiên), RabbitMQ/lapin (email job), Gmail OAuth2 (worker gửi mail).
-- **Phân lớp phụ thuộc**: `domain` (entity + trait repo, không phụ thuộc gì) ← `application` (service + dto + AppError) ← `infrastructure` (impl repo Postgres/Redis/Rabbit) ← `apps/api` (axum, wiring). `shared` = config/messaging dùng chung.
+- **Phân lớp phụ thuộc**: `domain` (**CHỈ entity**, không phụ thuộc gì) ← `application` (service + dto + **port traits ở `ports/` (repo + cache) + AppError**) ← `infrastructure` (impl repo Postgres/Redis/Rabbit) ← `apps/api` (axum, wiring). `shared` = config/messaging dùng chung. ⚠️ **Không còn `DomainError`**: port traits trả thẳng `Result<_, AppError>`; infra dựng `AppError` trực tiếp (1 loại lỗi duy nhất).
 
 ## 2. Công thức thêm 1 resource (RẤT QUAN TRỌNG — theo đúng mẫu này)
 Mẫu chuẩn: stack **`location`** (đơn giản) và **`zone`** (có enum + cột số + FK). Khi thêm resource `X`:
 
 1. **Domain** `libs/domain/src/entities/x.rs`: `X`, `NewX`, `XUpdate` (`#[derive(Default)]`, field `Option`), `XFilter`, `XSort`/`XSortField` (FromStr), enum nếu cần (mẫu `ZoneType`/`RoleStatus`: `as_str()` + `FromStr`). **Entity KHÔNG có field `deleted_at`** (chỉ lọc trong SQL). Khai báo ở `entities/mod.rs` (`mod x; pub use x::*;`). Tái dùng `SortDir` từ `entities`.
-2. **Trait** `libs/domain/src/repositories.rs`: `trait XRepository` (RPITIT: `fn f(&self,..) -> impl Future<Output=Result<T, DomainError>> + Send`). Thêm import entity.
+2. **Trait** `libs/application/src/ports/repositories.rs`: `trait XRepository` (RPITIT: `fn f(&self,..) -> impl Future<Output=Result<T, AppError>> + Send`). Import entity bằng `use domain::entities::...`; re-export qua `ports.rs` (`pub use repositories::*`).
 3. **Infra** `libs/infrastructure/src/repositories/pg_x_repository.rs`: `XRow` (`sqlx::FromRow`) + `From`/`TryFrom` (TryFrom nếu có enum), `map_sqlx_err` (map theo `db.constraint()` cho message thân thiện), `order_by_clause` (whitelist match → literal, luôn nối `id DESC`), lọc optional `($n::type IS NULL OR col=$n)`, update bằng `COALESCE($n, col)`, soft_delete (`UPDATE … SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, `rows_affected()==0` → NotFound). Khai báo ở `repositories/mod.rs`.
 4. **Application** `dto/x_dto.rs` (`CreateX`/`UpdateX`/`ListXQuery`/`XResponse`, `#[serde(deny_unknown_fields)]`, `validator`) + `services/x_service.rs` (`XService<XR, …>`; helper `norm`/`parse_sort`; validate → repo). Khai báo ở `dto/mod.rs`, `services/mod.rs`.
 5. **API**: `apps/api/src/middlewares/authz.rs` thêm `require_x_<action>` (gọi `ensure(state, user_id, "X_ACTION")`); `handlers/x_handler.rs`; `routes/x_route.rs` (4 nhóm `route_layer` create/view/update/remove rồi `.merge`). Khai báo ở `handlers/mod.rs`, `routes/mod.rs` (+ `.merge(x_route::routes::<S>(state.clone()))`).
@@ -128,9 +128,9 @@ GET list: `/vendors?code=&name=&vendor_type=&sort=code:asc,created_at:desc&page=
 5. **Frontend** (mục 12): đã có đăng nhập + protected routes + CRUD vai trò (react-query). Cần **tài khoản có mật khẩu** để e2e luồng login → /roles (tạo/sửa/xoá + chọn quyền). Tiếp: nối CRUD các resource còn lại (warehouse/vendor/item/BOM) theo mẫu `/roles`; hiển thị quyền người dùng (`useHasPermission`) thay chỗ hardcode `canUpdate/canDelete`.
 
 ## 11. Bản đồ file chính
-- **Domain**: `libs/domain/src/entities/{location,zone,bin,vendor,item,bom,user,role}.rs`, `repositories.rs` (traits), `errors.rs` (`DomainError`).
+- **Domain**: **CHỈ** `libs/domain/src/entities/{location,zone,bin,vendor,item,bom,user,role,cached_session,...}.rs` (entity thuần; KHÔNG còn `repositories.rs`/`errors.rs`/`cache.rs` — đã chuyển sang application).
 - **Infra**: `libs/infrastructure/src/repositories/pg_{location,zone,bin,vendor,item,bom,user,role}_repository.rs`.
-- **Application**: `libs/application/src/dto/{location,zone,bin,vendor,item,bom}_dto.rs`, `services/{location,zone,bin,vendor,item,bom}_service.rs`, `errors.rs` (`AppError`).
+- **Application**: `libs/application/src/dto/{location,zone,bin,vendor,item,bom}_dto.rs`, `services/{location,zone,bin,vendor,item,bom}_service.rs`, `ports.rs` (re-export) + `ports/{repositories,cache}.rs` (**port traits**, return `AppError`) + `ports` `EmailPublisher`, `errors.rs` (`AppError` — **loại lỗi duy nhất**).
 - **API**: `apps/api/src/{main.rs, errors.rs, extractor.rs}`, `middlewares/{auth.rs, authz.rs}`, `handlers/*_handler.rs`, `routes/*_route.rs`.
 - **DB chưa có code .rs**: `item_uom_conversions` (trong `001_init.sql`) — CRUD để follow-up.
 - **Shared/DB**: `libs/shared/src/config.rs`, `migrations/00{1..5}_*.sql`, `data/*.csv`, `docker-compose.dev.yaml`.

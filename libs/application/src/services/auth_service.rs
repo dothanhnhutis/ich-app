@@ -3,9 +3,9 @@ use crate::errors::AppError;
 use crate::security::session_token::{SessionToken, hash_token};
 use argon2::{self, PasswordVerifier};
 use chrono::Duration;
-use domain::cache::SessionCache;
+use crate::ports::SessionCache;
 use domain::entities::{CachedSession, NewSession, Session, User, UserStatus};
-use domain::repositories::{UserRepository, UserSessionRepository};
+use crate::ports::{UserRepository, UserSessionRepository};
 use uuid::Uuid;
 use validator::Validate;
 

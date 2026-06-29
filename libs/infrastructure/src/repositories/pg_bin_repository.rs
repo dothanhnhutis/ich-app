@@ -1,6 +1,6 @@
 use domain::entities::{Bin, BinFilter, BinSort, BinSortField, BinUpdate, NewBin, SortDir};
-use domain::errors::DomainError;
-use domain::repositories::BinRepository;
+use application::errors::AppError;
+use application::ports::BinRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -14,23 +14,23 @@ const BIN_LIST_WHERE: &str = r#"
       AND ($3::text IS NULL OR name = $3)
 "#;
 
-/// Map lỗi DB → DomainError theo TÊN constraint/index (PG trả tên cả với unique index).
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+/// Map lỗi DB → AppError theo TÊN constraint/index (PG trả tên cả với unique index).
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e {
         match db.constraint() {
             Some("uq_storage_bins_code") => {
-                return DomainError::AlreadyExists("Mã kệ đã tồn tại".into());
+                return AppError::Validation("Mã kệ đã tồn tại".into());
             }
             Some("uq_storage_bins_zone_name") => {
-                return DomainError::AlreadyExists("Tên kệ đã tồn tại trong khu vực".into());
+                return AppError::Validation("Tên kệ đã tồn tại trong khu vực".into());
             }
             _ => {}
         }
         if db.is_foreign_key_violation() {
-            return DomainError::Validation("Khu vực không tồn tại".into());
+            return AppError::Validation("Khu vực không tồn tại".into());
         }
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 fn order_by_clause(sort: &[BinSort]) -> String {
@@ -92,7 +92,7 @@ impl PgBinRepository {
 }
 
 impl BinRepository for PgBinRepository {
-    async fn create(&self, new_bin: NewBin) -> Result<Bin, DomainError> {
+    async fn create(&self, new_bin: NewBin) -> Result<Bin, AppError> {
         let sql = format!(
             "INSERT INTO storage_bins (zone_id, code, name) VALUES ($1, $2, $3) RETURNING {BIN_COLS}"
         );
@@ -106,7 +106,7 @@ impl BinRepository for PgBinRepository {
         Ok(Bin::from(row))
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<Bin>, DomainError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Bin>, AppError> {
         let sql =
             format!("SELECT {BIN_COLS} FROM storage_bins WHERE id = $1 AND deleted_at IS NULL");
         let row: Option<BinRow> = sqlx::query_as(&sql)
@@ -117,7 +117,7 @@ impl BinRepository for PgBinRepository {
         Ok(row.map(Bin::from))
     }
 
-    async fn list(&self, filter: BinFilter) -> Result<(Vec<Bin>, i64), DomainError> {
+    async fn list(&self, filter: BinFilter) -> Result<(Vec<Bin>, i64), AppError> {
         let count_sql = format!("SELECT COUNT(*) FROM storage_bins {BIN_LIST_WHERE}");
         let total: i64 = sqlx::query_scalar(&count_sql)
             .bind(filter.zone_id)
@@ -144,7 +144,7 @@ impl BinRepository for PgBinRepository {
         Ok((rows.into_iter().map(Bin::from).collect(), total))
     }
 
-    async fn update(&self, id: Uuid, changes: BinUpdate) -> Result<Option<Bin>, DomainError> {
+    async fn update(&self, id: Uuid, changes: BinUpdate) -> Result<Option<Bin>, AppError> {
         let sql = format!(
             r#"
             UPDATE storage_bins SET
@@ -166,7 +166,7 @@ impl BinRepository for PgBinRepository {
         Ok(row.map(Bin::from))
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let res = sqlx::query(
             "UPDATE storage_bins SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
         )
@@ -175,7 +175,7 @@ impl BinRepository for PgBinRepository {
         .await
         .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Kệ không tồn tại".into()));
+            return Err(AppError::NotFound("Kệ không tồn tại".into()));
         }
         Ok(())
     }

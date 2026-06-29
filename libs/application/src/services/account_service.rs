@@ -7,7 +7,7 @@ use crate::ports::EmailPublisher;
 use crate::security::password::hash_password;
 use crate::security::session_token::{SessionToken, hash_token};
 use domain::entities::{NewPasswordToken, PasswordTokenType, UserStatus};
-use domain::repositories::{PasswordTokenRepository, UserRepository};
+use crate::ports::{PasswordTokenRepository, UserRepository};
 use shared::messaging::{EmailJob, ResetPasswordEmail};
 
 pub struct AccountService<UR, PTR, EP>

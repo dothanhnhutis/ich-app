@@ -1,6 +1,6 @@
 use domain::entities::{NewSession, Session};
-use domain::errors::DomainError;
-use domain::repositories::UserSessionRepository;
+use application::errors::AppError;
+use application::ports::UserSessionRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -49,16 +49,16 @@ impl From<SessionRow> for Session {
     }
 }
 
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e {
         if db.is_unique_violation() {
-            return DomainError::AlreadyExists("Session token đã tồn tại".into());
+            return AppError::Validation("Session token đã tồn tại".into());
         }
         if db.is_foreign_key_violation() {
-            return DomainError::Validation("User không tồn tại".into());
+            return AppError::Validation("User không tồn tại".into());
         }
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 /// `id`, `created_at`, `updated_at` do DB sinh; `revoked_at`/`revoke_reason` mặc định NULL.
@@ -115,7 +115,7 @@ impl PgUserSessionRepository {
 }
 
 impl UserSessionRepository for PgUserSessionRepository {
-    async fn create(&self, new_session: NewSession) -> Result<Session, DomainError> {
+    async fn create(&self, new_session: NewSession) -> Result<Session, AppError> {
         let row: SessionRow = sqlx::query_as(INSERT_SESSION)
             .bind(new_session.user_id)
             .bind(new_session.token_hash)
@@ -134,7 +134,7 @@ impl UserSessionRepository for PgUserSessionRepository {
         Ok(row.into())
     }
 
-    async fn find_by_token_hash(&self, token_hash: &str) -> Result<Option<Session>, DomainError> {
+    async fn find_by_token_hash(&self, token_hash: &str) -> Result<Option<Session>, AppError> {
         let row: Option<SessionRow> = sqlx::query_as(SELECT_SESSION_BY_TOKEN)
             .bind(token_hash)
             .fetch_optional(&self.pool)
@@ -144,7 +144,7 @@ impl UserSessionRepository for PgUserSessionRepository {
         Ok(row.map(Session::from))
     }
 
-    async fn revoke(&self, id: Uuid, reason: &str) -> Result<(), DomainError> {
+    async fn revoke(&self, id: Uuid, reason: &str) -> Result<(), AppError> {
         sqlx::query(REVOKE_SESSION)
             .bind(id)
             .bind(reason)
@@ -155,7 +155,7 @@ impl UserSessionRepository for PgUserSessionRepository {
         Ok(())
     }
 
-    async fn revoke_all_for_user(&self, user_id: Uuid, reason: &str) -> Result<(), DomainError> {
+    async fn revoke_all_for_user(&self, user_id: Uuid, reason: &str) -> Result<(), AppError> {
         sqlx::query(REVOKE_ALL_FOR_USER)
             .bind(user_id)
             .bind(reason)
@@ -166,7 +166,7 @@ impl UserSessionRepository for PgUserSessionRepository {
         Ok(())
     }
 
-    async fn touch_expires(&self, id: Uuid, expires_at: DateTime<Utc>) -> Result<(), DomainError> {
+    async fn touch_expires(&self, id: Uuid, expires_at: DateTime<Utc>) -> Result<(), AppError> {
         sqlx::query(TOUCH_EXPIRES)
             .bind(id)
             .bind(expires_at)

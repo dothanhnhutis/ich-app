@@ -4,8 +4,8 @@ use domain::entities::{
     Bom, BomFilter, BomLine, BomLineType, BomLineUpdate, BomSort, BomSortField, BomStatus, BomType,
     BomUpdate, NewBom, NewBomLine, QtyBasis, SortDir,
 };
-use domain::errors::DomainError;
-use domain::repositories::BomRepository;
+use application::errors::AppError;
+use application::ports::BomRepository;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -26,70 +26,70 @@ const BOM_LIST_WHERE: &str = r#"
       AND ($4::text IS NULL OR code = $4)
 "#;
 
-fn map_sqlx_err(e: sqlx::Error) -> DomainError {
+fn map_sqlx_err(e: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &e {
         match db.constraint() {
             Some("uq_boms_code") => {
-                return DomainError::AlreadyExists("Mã BOM đã tồn tại".into());
+                return AppError::Validation("Mã BOM đã tồn tại".into());
             }
             Some("uq_boms_item_type_ver") => {
-                return DomainError::AlreadyExists(
+                return AppError::Validation(
                     "Phiên bản BOM cho item này (theo loại) đã tồn tại".into(),
                 );
             }
             Some("uq_boms_default_active") => {
-                return DomainError::Validation(
+                return AppError::Validation(
                     "Item đã có một BOM mặc định đang ACTIVE cùng loại".into(),
                 );
             }
             Some("chk_boms_type") => {
-                return DomainError::Validation("Loại BOM không hợp lệ".into());
+                return AppError::Validation("Loại BOM không hợp lệ".into());
             }
             Some("chk_boms_status") => {
-                return DomainError::Validation("Trạng thái BOM không hợp lệ".into());
+                return AppError::Validation("Trạng thái BOM không hợp lệ".into());
             }
             Some("chk_boms_qty_basis") => {
-                return DomainError::Validation("Cơ sở định lượng không hợp lệ".into());
+                return AppError::Validation("Cơ sở định lượng không hợp lệ".into());
             }
             Some("chk_boms_out_qty") => {
-                return DomainError::Validation("Sản lượng đầu ra phải lớn hơn 0".into());
+                return AppError::Validation("Sản lượng đầu ra phải lớn hơn 0".into());
             }
             Some("chk_boms_effective") => {
-                return DomainError::Validation(
+                return AppError::Validation(
                     "Thời điểm hiệu lực 'đến' phải sau 'từ'".into(),
                 );
             }
             Some("fk_boms_output_item") => {
-                return DomainError::Validation("Item đầu ra không tồn tại".into());
+                return AppError::Validation("Item đầu ra không tồn tại".into());
             }
             Some("uq_bom_lines_line_no") => {
-                return DomainError::AlreadyExists("Số dòng đã tồn tại trong BOM".into());
+                return AppError::Validation("Số dòng đã tồn tại trong BOM".into());
             }
             Some("uq_bom_lines_component") => {
-                return DomainError::AlreadyExists("Thành phần đã có trong BOM".into());
+                return AppError::Validation("Thành phần đã có trong BOM".into());
             }
             Some("chk_bom_lines_type") => {
-                return DomainError::Validation("Loại dòng BOM không hợp lệ".into());
+                return AppError::Validation("Loại dòng BOM không hợp lệ".into());
             }
             Some("chk_bom_lines_qty") => {
-                return DomainError::Validation("Số lượng phải lớn hơn 0".into());
+                return AppError::Validation("Số lượng phải lớn hơn 0".into());
             }
             Some("chk_bom_lines_input_qty") => {
-                return DomainError::Validation("Số lượng nhập phải lớn hơn 0".into());
+                return AppError::Validation("Số lượng nhập phải lớn hơn 0".into());
             }
             Some("chk_bom_lines_scrap") => {
-                return DomainError::Validation("Hao hụt phải trong khoảng 0 đến dưới 100".into());
+                return AppError::Validation("Hao hụt phải trong khoảng 0 đến dưới 100".into());
             }
             Some("fk_bom_lines_bom") => {
-                return DomainError::Validation("BOM không tồn tại".into());
+                return AppError::Validation("BOM không tồn tại".into());
             }
             Some("fk_bom_lines_component") => {
-                return DomainError::Validation("Thành phần (item) không tồn tại".into());
+                return AppError::Validation("Thành phần (item) không tồn tại".into());
             }
             _ => {}
         }
     }
-    DomainError::Internal(e.to_string())
+    AppError::Internal(e.to_string())
 }
 
 fn order_by_clause(sort: &[BomSort]) -> String {
@@ -139,18 +139,18 @@ struct BomRow {
 }
 
 impl TryFrom<BomRow> for Bom {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(r: BomRow) -> Result<Self, Self::Error> {
         Ok(Bom {
             id: r.id,
             output_item_id: r.output_item_id,
-            bom_type: BomType::from_str(&r.bom_type).map_err(DomainError::Internal)?,
+            bom_type: BomType::from_str(&r.bom_type).map_err(AppError::Internal)?,
             code: r.code,
             name: r.name,
             version_no: r.version_no,
-            status: BomStatus::from_str(&r.status).map_err(DomainError::Internal)?,
+            status: BomStatus::from_str(&r.status).map_err(AppError::Internal)?,
             is_default: r.is_default,
-            qty_basis: QtyBasis::from_str(&r.qty_basis).map_err(DomainError::Internal)?,
+            qty_basis: QtyBasis::from_str(&r.qty_basis).map_err(AppError::Internal)?,
             output_qty: r.output_qty,
             output_uom: r.output_uom,
             effective_from: r.effective_from,
@@ -180,14 +180,14 @@ struct BomLineRow {
 }
 
 impl TryFrom<BomLineRow> for BomLine {
-    type Error = DomainError;
+    type Error = AppError;
     fn try_from(r: BomLineRow) -> Result<Self, Self::Error> {
         Ok(BomLine {
             id: r.id,
             bom_id: r.bom_id,
             component_item_id: r.component_item_id,
             line_no: r.line_no,
-            line_type: BomLineType::from_str(&r.line_type).map_err(DomainError::Internal)?,
+            line_type: BomLineType::from_str(&r.line_type).map_err(AppError::Internal)?,
             quantity: r.quantity,
             input_uom: r.input_uom,
             input_qty: r.input_qty,
@@ -223,7 +223,7 @@ impl BomRepository for PgBomRepository {
         &self,
         new_bom: NewBom,
         lines: &[NewBomLine],
-    ) -> Result<(Bom, Vec<BomLine>), DomainError> {
+    ) -> Result<(Bom, Vec<BomLine>), AppError> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
 
         let bom_sql = format!(
@@ -284,7 +284,7 @@ impl BomRepository for PgBomRepository {
         Ok((bom, lines))
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<Bom>, DomainError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Bom>, AppError> {
         let sql = format!("SELECT {BOM_COLS} FROM boms WHERE id = $1 AND deleted_at IS NULL");
         let row: Option<BomRow> = sqlx::query_as(&sql)
             .bind(id)
@@ -297,7 +297,7 @@ impl BomRepository for PgBomRepository {
     async fn find_with_lines(
         &self,
         id: Uuid,
-    ) -> Result<Option<(Bom, Vec<BomLine>)>, DomainError> {
+    ) -> Result<Option<(Bom, Vec<BomLine>)>, AppError> {
         let Some(bom) = self.find_by_id(id).await? else {
             return Ok(None);
         };
@@ -305,7 +305,7 @@ impl BomRepository for PgBomRepository {
         Ok(Some((bom, lines)))
     }
 
-    async fn list(&self, filter: BomFilter) -> Result<(Vec<Bom>, i64), DomainError> {
+    async fn list(&self, filter: BomFilter) -> Result<(Vec<Bom>, i64), AppError> {
         let count_sql = format!("SELECT COUNT(*) FROM boms {BOM_LIST_WHERE}");
         let total: i64 = sqlx::query_scalar(&count_sql)
             .bind(filter.output_item_id)
@@ -337,7 +337,7 @@ impl BomRepository for PgBomRepository {
         Ok((boms, total))
     }
 
-    async fn update(&self, id: Uuid, changes: BomUpdate) -> Result<Option<Bom>, DomainError> {
+    async fn update(&self, id: Uuid, changes: BomUpdate) -> Result<Option<Bom>, AppError> {
         let status = changes.status.map(|s| s.as_str());
         let qty_basis = changes.qty_basis.map(|q| q.as_str());
         let sql = format!(
@@ -377,7 +377,7 @@ impl BomRepository for PgBomRepository {
         row.map(Bom::try_from).transpose()
     }
 
-    async fn soft_delete(&self, id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete(&self, id: Uuid) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
         let res =
             sqlx::query("UPDATE boms SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
@@ -386,7 +386,7 @@ impl BomRepository for PgBomRepository {
                 .await
                 .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("BOM không tồn tại".into())); // drop tx = rollback
+            return Err(AppError::NotFound("BOM không tồn tại".into())); // drop tx = rollback
         }
         // Cascade xoá mềm các dòng (Hybrid: BOM sở hữu lines).
         sqlx::query("UPDATE bom_lines SET deleted_at = NOW() WHERE bom_id = $1 AND deleted_at IS NULL")
@@ -398,7 +398,7 @@ impl BomRepository for PgBomRepository {
         Ok(())
     }
 
-    async fn add_line(&self, bom_id: Uuid, l: NewBomLine) -> Result<BomLine, DomainError> {
+    async fn add_line(&self, bom_id: Uuid, l: NewBomLine) -> Result<BomLine, AppError> {
         let sql = format!("{INSERT_LINE_SQL} RETURNING {BOM_LINE_COLS}");
         let row: BomLineRow = sqlx::query_as(&sql)
             .bind(bom_id)
@@ -422,7 +422,7 @@ impl BomRepository for PgBomRepository {
         bom_id: Uuid,
         line_id: Uuid,
         changes: BomLineUpdate,
-    ) -> Result<Option<BomLine>, DomainError> {
+    ) -> Result<Option<BomLine>, AppError> {
         let line_type = changes.line_type.map(|t| t.as_str());
         let sql = format!(
             r#"
@@ -456,7 +456,7 @@ impl BomRepository for PgBomRepository {
         row.map(BomLine::try_from).transpose()
     }
 
-    async fn soft_delete_line(&self, bom_id: Uuid, line_id: Uuid) -> Result<(), DomainError> {
+    async fn soft_delete_line(&self, bom_id: Uuid, line_id: Uuid) -> Result<(), AppError> {
         let res = sqlx::query(
             "UPDATE bom_lines SET deleted_at = NOW() WHERE id = $1 AND bom_id = $2 AND deleted_at IS NULL",
         )
@@ -466,12 +466,12 @@ impl BomRepository for PgBomRepository {
         .await
         .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
-            return Err(DomainError::NotFound("Dòng BOM không tồn tại".into()));
+            return Err(AppError::NotFound("Dòng BOM không tồn tại".into()));
         }
         Ok(())
     }
 
-    async fn list_lines(&self, bom_id: Uuid) -> Result<Vec<BomLine>, DomainError> {
+    async fn list_lines(&self, bom_id: Uuid) -> Result<Vec<BomLine>, AppError> {
         let sql = format!(
             "SELECT {BOM_LINE_COLS} FROM bom_lines \
              WHERE bom_id = $1 AND deleted_at IS NULL ORDER BY line_no ASC, id ASC"
@@ -488,7 +488,7 @@ impl BomRepository for PgBomRepository {
         &self,
         component_item_id: Uuid,
         output_item_id: Uuid,
-    ) -> Result<bool, DomainError> {
+    ) -> Result<bool, AppError> {
         // Duyệt đệ quy các thành phần mà `component` phụ thuộc (trực/gián tiếp);
         // nếu `output` xuất hiện → thêm dòng này tạo chu trình.
         let cycles: bool = sqlx::query_scalar(

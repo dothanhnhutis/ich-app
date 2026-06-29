@@ -13,7 +13,7 @@ use domain::entities::{
     BomFilter, BomLineType, BomLineUpdate, BomSort, BomSortField, BomStatus, BomType, BomUpdate,
     NewBom, NewBomLine, QtyBasis, SortDir,
 };
-use domain::repositories::{BomRepository, ItemRepository};
+use crate::ports::{BomRepository, ItemRepository};
 
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;
